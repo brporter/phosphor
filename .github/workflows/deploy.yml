@@ -1,0 +1,137 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: write
+
+env:
+  AZURE_SUBSCRIPTION_ID: ae60afd2-33e1-4d0a-8874-b840b890922b
+  RESOURCE_GROUP: betaporter
+  CONTAINER_APP_NAME: phosphor
+
+jobs:
+  # ── Build relay Docker image, push to ACR, deploy to Container Apps ──
+  deploy:
+    name: Deploy Relay
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get ACR login server
+        id: acr
+        run: |
+          ACR_SERVER=$(az containerapp show \
+            -n ${{ env.CONTAINER_APP_NAME }} \
+            -g ${{ env.RESOURCE_GROUP }} \
+            --query 'properties.configuration.registries[0].server' -o tsv)
+          ACR_NAME=$(echo "$ACR_SERVER" | cut -d. -f1)
+          echo "server=$ACR_SERVER" >> "$GITHUB_OUTPUT"
+          echo "name=$ACR_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ACR
+        run: az acr login --name ${{ steps.acr.outputs.name }}
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE="${{ steps.acr.outputs.server }}/phosphor-relay:${{ github.sha }}"
+          docker build -t "$IMAGE" -f deploy/Dockerfile .
+          docker push "$IMAGE"
+
+      - name: Deploy to Container App
+        run: |
+          az containerapp update \
+            -n ${{ env.CONTAINER_APP_NAME }} \
+            -g ${{ env.RESOURCE_GROUP }} \
+            --image "${{ steps.acr.outputs.server }}/phosphor-relay:${{ github.sha }}" \
+            --set-env-vars \
+              "MICROSOFT_CLIENT_ID=${{ secrets.MICROSOFT_CLIENT_ID }}" \
+              "MICROSOFT_CLIENT_SECRET=${{ secrets.MICROSOFT_CLIENT_SECRET }}" \
+              "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" \
+              "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+              "APPLE_CLIENT_ID=${{ secrets.APPLE_CLIENT_ID }}" \
+              "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" \
+              "APPLE_KEY_ID=${{ secrets.APPLE_KEY_ID }}" \
+              "APPLE_PRIVATE_KEY=${{ secrets.APPLE_PRIVATE_KEY }}"
+
+  # ── Build CLI for all platforms, create GitHub Release on PR merge ──
+  release:
+    name: Build CLI & Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build CLI binaries
+        run: |
+          mkdir -p dist
+          platforms=(
+            "linux/amd64"
+            "linux/arm64"
+            "darwin/amd64"
+            "darwin/arm64"
+            "windows/amd64"
+            "windows/arm64"
+          )
+          for platform in "${platforms[@]}"; do
+            GOOS="${platform%/*}"
+            GOARCH="${platform#*/}"
+            output="dist/phosphor-${GOOS}-${GOARCH}"
+            if [ "$GOOS" = "windows" ]; then
+              output="${output}.exe"
+            fi
+            echo "Building ${GOOS}/${GOARCH}..."
+            CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
+              go build -ldflags="-s -w" -o "$output" ./cmd/phosphor
+          done
+
+      - name: Find merged pull request
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'closed',
+              sort: 'updated',
+              direction: 'desc',
+              per_page: 10
+            });
+            const pr = prs.find(p => p.merge_commit_sha === context.sha);
+            if (pr) {
+              fs.writeFileSync('release-notes.md', pr.body || 'No description provided.');
+              core.setOutput('title', pr.title);
+              core.setOutput('found', 'true');
+            } else {
+              fs.writeFileSync('release-notes.md', `Release from commit ${context.sha.substring(0, 7)}`);
+              core.setOutput('title', 'Release');
+              core.setOutput('found', 'false');
+            }
+
+      - name: Create GitHub Release
+        if: steps.pr.outputs.found == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: "v1.0.${{ github.run_number }} \u2014 ${{ steps.pr.outputs.title }}"
+          body_path: release-notes.md
+          files: dist/*
+          draft: false
+          prerelease: false

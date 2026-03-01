@@ -2,7 +2,18 @@
   "permissions": {
     "allow": [
       "Bash(npm uninstall:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "mcp__azure__get_azure_bestpractices",
+      "mcp__azure__deploy",
+      "mcp__azure__subscription_list",
+      "mcp__azure__group_list",
+      "Bash(az resource:*)",
+      "Bash(az network:*)",
+      "Bash(az acr:*)",
+      "mcp__azure__documentation",
+      "Bash(az deployment:*)",
+      "Bash(curl:*)",
+      "Bash(az containerapp:*)"
     ]
   }
 }
