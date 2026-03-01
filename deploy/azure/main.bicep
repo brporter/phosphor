@@ -1,6 +1,6 @@
 // Phosphor relay server — Azure Container Apps infrastructure
-// Deploys: ACR, managed identity, Log Analytics, Container Apps Environment,
-// Container App, and DNS records for custom domain verification.
+// Deploys: ACR, managed identity, Log Analytics, Redis Cache,
+// Container Apps Environment, Container App, and DNS records for custom domain.
 
 @description('Name prefix for all resources')
 param name string = 'phosphor'
@@ -72,6 +72,22 @@ resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
     )
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
+  }
+}
+
+// ---------- Azure Cache for Redis (Basic C0 — smallest, no HA) ----------
+
+resource redis 'Microsoft.Cache/redis@2024-03-01' = {
+  name: '${name}-redis'
+  location: location
+  properties: {
+    sku: {
+      name: 'Basic'
+      family: 'C'
+      capacity: 0
+    }
+    enableNonSslPort: false
+    minimumTlsVersion: '1.2'
   }
 }
 
@@ -150,6 +166,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'APPLE_TEAM_ID', value: appleTeamId }
             { name: 'APPLE_KEY_ID', value: appleKeyId }
             { name: 'APPLE_PRIVATE_KEY', value: applePrivateKey }
+            { name: 'REDIS_URL', value: 'rediss://:${redis.listKeys().primaryKey}@${redis.properties.hostName}:${redis.properties.sslPort}' }
           ]
         }
       ]
@@ -211,3 +228,4 @@ output acrLoginServer string = acr.properties.loginServer
 output acrName string = acr.name
 output verificationId string = containerAppEnv.properties.customDomainConfiguration.customDomainVerificationId
 output managedIdentityClientId string = managedIdentity.properties.clientId
+output redisHostName string = redis.properties.hostName
