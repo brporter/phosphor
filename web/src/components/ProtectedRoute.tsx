@@ -62,6 +62,9 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
           <button onClick={() => void login("google")}>
             sign in with Google
           </button>
+          <button onClick={() => void login("apple")}>
+            sign in with Apple
+          </button>
         </div>
       </div>
     );

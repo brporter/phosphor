@@ -18,6 +18,10 @@ export function AuthCallback() {
           authority: "https://accounts.google.com",
           client_id_env: "VITE_GOOGLE_CLIENT_ID",
         },
+        apple: {
+          authority: "https://appleid.apple.com",
+          client_id_env: "VITE_APPLE_CLIENT_ID",
+        },
       };
 
     const config = configs[provider];

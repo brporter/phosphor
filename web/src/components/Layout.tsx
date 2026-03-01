@@ -54,6 +54,7 @@ export function Layout() {
                 sign in with Microsoft
               </button>
               <button onClick={() => void login("google")}>Google</button>
+              <button onClick={() => void login("apple")}>Apple</button>
             </>
           )}
         </div>

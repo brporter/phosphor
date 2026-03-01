@@ -39,6 +39,11 @@ const providerConfigs: Record<
     client_id_env: "VITE_GOOGLE_CLIENT_ID",
     scope: "openid profile email",
   },
+  apple: {
+    authority: "https://appleid.apple.com",
+    client_id_env: "VITE_APPLE_CLIENT_ID",
+    scope: "openid name email",
+  },
 };
 
 function createUserManager(provider: string): UserManager | null {
@@ -64,6 +69,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Try to restore session on mount
   useEffect(() => {
+    // Check for pending Apple auth session
+    const appleSession = localStorage.getItem("phosphor_auth_session");
+    if (appleSession) {
+      localStorage.removeItem("phosphor_auth_session");
+      const poll = async () => {
+        const resp = await fetch(`/api/auth/poll?session=${appleSession}`);
+        const data = await resp.json();
+        if (data.status === "complete" && data.id_token) {
+          const payload = JSON.parse(atob(data.id_token.split(".")[1]));
+          setUser({
+            id_token: data.id_token,
+            access_token: data.id_token,
+            token_type: "Bearer",
+            profile: { sub: payload.sub, iss: payload.iss, email: payload.email },
+            expired: false,
+          } as unknown as User);
+        }
+        setIsLoading(false);
+      };
+      poll();
+      return;
+    }
+
     const provider = localStorage.getItem("phosphor_provider") ?? "microsoft";
     const mgr = createUserManager(provider);
     if (mgr) {
@@ -79,6 +107,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (provider: string) => {
     localStorage.setItem("phosphor_provider", provider);
+
+    // Apple uses relay-mediated flow due to form_post requirement
+    if (provider === "apple") {
+      const resp = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "apple" }),
+      });
+      const { auth_url, session_id } = await resp.json();
+      localStorage.setItem("phosphor_auth_session", session_id);
+      window.location.href = auth_url;
+      return;
+    }
+
     const mgr = createUserManager(provider);
     if (!mgr) {
       // Dev mode fallback
