@@ -57,14 +57,27 @@ func NewVerifier(logger *slog.Logger) *Verifier {
 
 // AddProvider registers an OIDC provider. Call during startup.
 func (v *Verifier) AddProvider(ctx context.Context, cfg ProviderConfig) error {
-	provider, err := oidc.NewProvider(ctx, cfg.Issuer)
+	// Microsoft's /common/v2.0 discovery doc returns "{tenantid}" as a
+	// placeholder in the issuer field, which doesn't match the discovery URL.
+	// Skip the issuer check for multi-tenant Microsoft endpoints.
+	discoveryCtx := ctx
+	if cfg.Name == "microsoft" {
+		discoveryCtx = oidc.InsecureIssuerURLContext(ctx, cfg.Issuer)
+	}
+	provider, err := oidc.NewProvider(discoveryCtx, cfg.Issuer)
 	if err != nil {
 		return fmt.Errorf("discover OIDC provider %s: %w", cfg.Name, err)
 	}
 
-	verifier := provider.Verifier(&oidc.Config{
+	verifierCfg := &oidc.Config{
 		ClientID: cfg.ClientID,
-	})
+	}
+	// Microsoft multi-tenant tokens have a tenant-specific issuer that won't
+	// match the /common discovery issuer, so skip issuer validation.
+	if cfg.Name == "microsoft" {
+		verifierCfg.SkipIssuerCheck = true
+	}
+	verifier := provider.Verifier(verifierCfg)
 
 	v.mu.Lock()
 	defer v.mu.Unlock()
