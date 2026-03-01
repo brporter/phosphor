@@ -7,7 +7,7 @@ COPY web/ ./
 RUN npm run build
 
 # Stage 2: Build Go binaries
-FROM golang:1.23-alpine AS go-build
+FROM golang:1.24-alpine AS go-build
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
