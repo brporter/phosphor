@@ -12,6 +12,7 @@ type AuthSession struct {
 	ID           string
 	Provider     string
 	CodeVerifier string
+	Source       string // "web" or "cli"
 	CreatedAt    time.Time
 	IDToken      string // populated when the callback completes
 }
@@ -36,12 +37,13 @@ func NewAuthSessionStore(ttl time.Duration) *AuthSessionStore {
 }
 
 // Create starts a new pending auth session.
-func (s *AuthSessionStore) Create(provider, codeVerifier string) *AuthSession {
+func (s *AuthSessionStore) Create(provider, codeVerifier, source string) *AuthSession {
 	id, _ := nanoid.New()
 	sess := &AuthSession{
 		ID:           id,
 		Provider:     provider,
 		CodeVerifier: codeVerifier,
+		Source:       source,
 		CreatedAt:    time.Now(),
 	}
 	s.mu.Lock()

@@ -170,7 +170,7 @@ func TestHandleAuthAuthorize_Success(t *testing.T) {
 	s := newTestAuthServer(t)
 
 	// Create a real session in the store first.
-	sess := s.authSessions.Create("test", "test-code-verifier")
+	sess := s.authSessions.Create("test", "test-code-verifier", "cli")
 
 	r := httptest.NewRequest(http.MethodGet, "/api/auth/authorize?session="+sess.ID, nil)
 	w := httptest.NewRecorder()
@@ -273,7 +273,7 @@ func TestHandleAuthCallback_Success(t *testing.T) {
 	s := newTestAuthServer(t)
 
 	// Pre-create an auth session so the handler can look it up.
-	sess := s.authSessions.Create("test", "test-code-verifier")
+	sess := s.authSessions.Create("test", "test-code-verifier", "cli")
 
 	target := "/api/auth/callback?code=auth-code&state=" + sess.ID
 	r := httptest.NewRequest(http.MethodGet, target, nil)
@@ -301,7 +301,7 @@ func TestHandleAuthCallback_Success(t *testing.T) {
 func TestHandleAuthCallback_POST(t *testing.T) {
 	s := newTestAuthServer(t)
 
-	sess := s.authSessions.Create("test", "test-code-verifier-post")
+	sess := s.authSessions.Create("test", "test-code-verifier-post", "cli")
 
 	form := url.Values{
 		"code":  {"post-auth-code"},
@@ -326,7 +326,7 @@ func TestHandleAuthCallback_POST(t *testing.T) {
 func TestHandleAuthPoll_Pending(t *testing.T) {
 	s := newTestAuthServer(t)
 
-	sess := s.authSessions.Create("test", "verifier")
+	sess := s.authSessions.Create("test", "verifier", "cli")
 
 	r := httptest.NewRequest(http.MethodGet, "/api/auth/poll?session="+sess.ID, nil)
 	w := httptest.NewRecorder()
@@ -354,7 +354,7 @@ func TestHandleAuthPoll_Pending(t *testing.T) {
 func TestHandleAuthPoll_Complete(t *testing.T) {
 	s := newTestAuthServer(t)
 
-	sess := s.authSessions.Create("test", "verifier")
+	sess := s.authSessions.Create("test", "verifier", "cli")
 	s.authSessions.Complete(sess.ID, "completed-id-token")
 
 	r := httptest.NewRequest(http.MethodGet, "/api/auth/poll?session="+sess.ID, nil)

@@ -33,6 +33,7 @@ func codeChallenge(verifier string) string {
 
 type authLoginRequest struct {
 	Provider string `json:"provider"`
+	Source   string `json:"source"` // "web" or "cli" (default)
 }
 
 type authLoginResponse struct {
@@ -54,8 +55,13 @@ func (s *Server) HandleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	source := req.Source
+	if source == "" {
+		source = "cli"
+	}
+
 	verifier := generateCodeVerifier()
-	sess := s.authSessions.Create(req.Provider, verifier)
+	sess := s.authSessions.Create(req.Provider, verifier, source)
 
 	authURL := fmt.Sprintf("%s/api/auth/authorize?session=%s", s.baseURL, sess.ID)
 
@@ -203,6 +209,13 @@ func (s *Server) HandleAuthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.authSessions.Complete(state, tokenResult.IDToken)
+
+	// Web-originated logins redirect back to the SPA; CLI logins show a
+	// success page with an optional link to the session list.
+	if sess.Source == "web" {
+		http.Redirect(w, r, s.baseURL, http.StatusFound)
+		return
+	}
 	s.renderAuthResult(w, true, "")
 }
 
@@ -223,7 +236,7 @@ func (s *Server) HandleAuthPoll(w http.ResponseWriter, r *http.Request) {
 func (s *Server) renderAuthResult(w http.ResponseWriter, success bool, errMsg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if success {
-		fmt.Fprint(w, `<!DOCTYPE html><html><body style="background:#0a0a0a;color:#00ff41;font-family:monospace;display:flex;justify-content:center;align-items:center;height:100vh;margin:0"><div style="text-align:center"><h2>Authentication Complete</h2><p>You can close this tab and return to your terminal.</p></div></body></html>`)
+		fmt.Fprintf(w, `<!DOCTYPE html><html><body style="background:#0a0a0a;color:#00ff41;font-family:monospace;display:flex;justify-content:center;align-items:center;height:100vh;margin:0"><div style="text-align:center"><h2>Authentication Complete</h2><p>You can close this tab and return to your terminal.</p><p style="margin-top:1em"><a href="%s" style="color:#00ff41">View your sessions</a></p></div></body></html>`, html.EscapeString(s.baseURL))
 	} else {
 		safeMsg := html.EscapeString(errMsg)
 		fmt.Fprintf(w, `<!DOCTYPE html><html><body style="background:#0a0a0a;color:#ff4444;font-family:monospace;display:flex;justify-content:center;align-items:center;height:100vh;margin:0"><div style="text-align:center"><h2>Authentication Failed</h2><p>%s</p></div></body></html>`, safeMsg)

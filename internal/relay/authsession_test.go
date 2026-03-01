@@ -9,7 +9,7 @@ func TestAuthSessionStore_CreateAndGet(t *testing.T) {
 	store := NewAuthSessionStore(5 * time.Minute)
 	defer store.Stop()
 
-	sess := store.Create("google", "test-verifier")
+	sess := store.Create("google", "test-verifier", "cli")
 	if sess.ID == "" {
 		t.Fatal("session ID is empty")
 	}
@@ -33,7 +33,7 @@ func TestAuthSessionStore_Complete(t *testing.T) {
 	store := NewAuthSessionStore(5 * time.Minute)
 	defer store.Stop()
 
-	sess := store.Create("apple", "verifier")
+	sess := store.Create("apple", "verifier", "cli")
 	store.Complete(sess.ID, "the-id-token")
 
 	got, ok := store.Get(sess.ID)
@@ -49,7 +49,7 @@ func TestAuthSessionStore_Consume(t *testing.T) {
 	store := NewAuthSessionStore(5 * time.Minute)
 	defer store.Stop()
 
-	sess := store.Create("microsoft", "verifier")
+	sess := store.Create("microsoft", "verifier", "cli")
 	store.Complete(sess.ID, "token-value")
 
 	token, ok := store.Consume(sess.ID)
@@ -71,7 +71,7 @@ func TestAuthSessionStore_Expiry(t *testing.T) {
 	store := NewAuthSessionStore(50 * time.Millisecond)
 	defer store.Stop()
 
-	sess := store.Create("google", "verifier")
+	sess := store.Create("google", "verifier", "cli")
 	time.Sleep(100 * time.Millisecond)
 
 	_, ok := store.Get(sess.ID)
