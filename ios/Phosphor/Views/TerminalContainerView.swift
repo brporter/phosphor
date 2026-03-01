@@ -65,6 +65,12 @@ struct TerminalContainerView: View {
         .onAppear {
             if let token = auth.getToken() {
                 viewModel.connect(sessionId: sessionId, token: token)
+                viewModel.onProcessExited = { code in
+                    let message = "\r\n\u{1B}[1;33m[Process exited (code \(code)). Tap session in list to restart.]\u{1B}[0m\r\n"
+                    if let data = message.data(using: .utf8) {
+                        viewModel.onStdout?(data)
+                    }
+                }
             }
         }
         .onDisappear {
@@ -108,9 +114,15 @@ struct TerminalContainerView: View {
                     .foregroundStyle(PhosphorTheme.text)
             }
 
-            Text(viewModel.connectionState.rawValue)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(PhosphorTheme.text.opacity(0.6))
+            if let exitCode = viewModel.processExitCode {
+                Text("process exited (\(exitCode))")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(PhosphorTheme.amber)
+            } else {
+                Text(viewModel.connectionState.rawValue)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(PhosphorTheme.text.opacity(0.6))
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -119,7 +131,8 @@ struct TerminalContainerView: View {
 
     private var statusColor: Color {
         switch viewModel.connectionState {
-        case .connected: return PhosphorTheme.green
+        case .connected:
+            return viewModel.processExitCode != nil ? PhosphorTheme.amber : PhosphorTheme.green
         case .connecting: return PhosphorTheme.amber
         case .disconnected: return PhosphorTheme.amber
         case .ended: return PhosphorTheme.text

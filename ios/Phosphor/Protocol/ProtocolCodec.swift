@@ -98,3 +98,11 @@ struct ViewerCountPayload: Codable {
 struct ModePayload: Codable {
     let mode: String
 }
+
+struct ProcessExitedPayload: Codable {
+    let exitCode: Int
+
+    enum CodingKeys: String, CodingKey {
+        case exitCode = "exit_code"
+    }
+}

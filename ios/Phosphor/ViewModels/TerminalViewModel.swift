@@ -15,11 +15,14 @@ final class TerminalViewModel {
     var joinedInfo: JoinedPayload?
     var errorMessage: String?
     var viewerCount: Int = 0
+    var processExitCode: Int?
 
     /// Callback invoked with stdout data to feed into SwiftTerm.
     var onStdout: ((Data) -> Void)?
     /// Callback invoked when the terminal should resize.
     var onResize: ((Int, Int) -> Void)?
+    /// Callback invoked when the process exits (writes message to terminal).
+    var onProcessExited: ((Int) -> Void)?
 
     private let wsManager = WebSocketManager()
     private var receiveTask: Task<Void, Never>?
@@ -102,6 +105,13 @@ final class TerminalViewModel {
         case .error(let message):
             errorMessage = message
             connectionState = .error
+
+        case .processExited(let code):
+            processExitCode = code
+            onProcessExited?(code)
+
+        case .restart:
+            processExitCode = nil
 
         case .disconnected:
             if connectionState != .ended {

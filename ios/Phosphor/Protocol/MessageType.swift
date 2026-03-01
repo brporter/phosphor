@@ -11,8 +11,10 @@ enum MessageType: UInt8 {
     case joined      = 0x13
     case reconnect   = 0x14
     case end         = 0x15
-    case error       = 0x16
-    case viewerCount = 0x20
+    case error          = 0x16
+    case processExited  = 0x17
+    case restart        = 0x18
+    case viewerCount    = 0x20
     case mode        = 0x21
     case ping        = 0x30
     case pong        = 0x31
