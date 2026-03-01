@@ -61,23 +61,18 @@ func main() {
 				command = args
 			}
 
+			if mode == "pipe" {
+				stat, _ := os.Stdin.Stat()
+				if (stat.Mode() & os.ModeCharDevice) != 0 {
+					return fmt.Errorf("no command specified and nothing piped to stdin\n\nUsage:\n  phosphor -- <command>        (e.g. phosphor -- bash)\n  <command> | phosphor          (e.g. ping localhost | phosphor)")
+				}
+			}
+
 			// Load token from flag or cache
 			if token == "" {
 				if cache, err := cli.LoadTokenCache(); err == nil {
 					token = cache.AccessToken
 				}
-			}
-
-			// Auto-login if no token available
-			if token == "" {
-				idToken, err := cli.BrowserLogin(context.Background(), cfg.RelayURL)
-				if err != nil {
-					return fmt.Errorf("auto-login failed: %w", err)
-				}
-				if err := cli.SaveTokenCache(&cli.TokenCache{AccessToken: idToken}); err != nil {
-					logger.Warn("failed to cache token", "err", err)
-				}
-				token = idToken
 			}
 
 			app := &cli.App{

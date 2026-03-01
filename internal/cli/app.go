@@ -43,6 +43,7 @@ type connectionResult struct {
 	processExited bool
 	exitCode      int
 	ws            *WSConn // keep WebSocket alive for manual restart wait
+	authFailed    bool    // relay rejected our token
 }
 
 // Run starts the CLI session with restart support.
@@ -157,6 +158,21 @@ func (a *App) runWithProcess(appCtx context.Context) error {
 			return nil
 		}
 
+		// Auth rejected — try browser login once, then retry
+		if result.authFailed && attempt == 0 {
+			fmt.Fprintf(os.Stderr, "Authentication required.\n")
+			idToken, err := BrowserLogin(appCtx, a.Config.RelayURL)
+			if err != nil {
+				return fmt.Errorf("login failed: %w", err)
+			}
+			if err := SaveTokenCache(&TokenCache{AccessToken: idToken}); err != nil {
+				a.Logger.Warn("failed to cache token", "err", err)
+			}
+			a.Token = idToken
+			attempt++
+			continue
+		}
+
 		// Connection lost — retry with backoff
 		delay := backoffSchedule[min(attempt, len(backoffSchedule)-1)]
 		attempt++
@@ -213,7 +229,10 @@ func (a *App) runConnection(
 		var e protocol.Error
 		protocol.DecodeJSON(payload, &e)
 		ws.Close()
-		return connectionResult{err: fmt.Errorf("server error: %s: %s", e.Code, e.Message)}
+		return connectionResult{
+			err:        fmt.Errorf("server error: %s: %s", e.Code, e.Message),
+			authFailed: e.Code == "auth_failed",
+		}
 	}
 	if msgType != protocol.TypeWelcome {
 		ws.Close()

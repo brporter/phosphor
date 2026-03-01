@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/redis/go-redis/v9"
 
@@ -17,6 +18,8 @@ import (
 )
 
 func main() {
+	godotenv.Load() // load .env if present; no error if missing
+
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	addr := os.Getenv("ADDR")

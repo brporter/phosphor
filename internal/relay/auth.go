@@ -25,10 +25,13 @@ func (s *Server) verifyToken(ctx context.Context, token string) (string, string,
 	// Real OIDC verification
 	if s.verifier != nil {
 		id, err := s.verifier.VerifyToken(ctx, token)
-		if err != nil {
+		if err == nil {
+			return id.Provider, id.Sub, nil
+		}
+		// In dev mode, fall through to accept any token
+		if !s.devMode {
 			return "", "", err
 		}
-		return id.Provider, id.Sub, nil
 	}
 
 	if s.devMode {

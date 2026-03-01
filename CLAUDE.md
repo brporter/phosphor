@@ -8,23 +8,21 @@ Phosphor is a real-time terminal sharing tool. A CLI streams a local terminal se
 
 ## Build & Development Commands
 
-All top-level commands are in the `Makefile`:
+See `docs/DEVELOPMENT.md` for full setup instructions. Quick reference:
 
 | Command | Description |
 |---|---|
-| `make` | Build everything (web → CLI → relay) |
-| `make build-web` | `cd web && npm ci && npm run build` |
-| `make build-cli` | `go build -o bin/phosphor ./cmd/phosphor` |
-| `make build-relay` | `go build -o bin/relay ./cmd/relay` |
-| `make dev-relay` | `go run ./cmd/relay` (relay on :8080) |
-| `make dev-web` | Vite dev server on :3000, proxies `/ws` and `/api` to :8080 |
-| `make clean` | Remove `bin/`, `web/dist/`, `web/node_modules/` |
+| `go run ./cmd/relay` | Start relay server (reads `.env` automatically) |
+| `cd web && npm run dev` | Vite dev server on :3000, proxies `/ws` and `/api` to :8080 |
+| `go run ./cmd/phosphor --relay ws://localhost:8080 -- bash` | Run CLI against local relay |
+| `go build -o bin/phosphor ./cmd/phosphor` | Build CLI binary |
+| `go build -o bin/relay ./cmd/relay` | Build relay binary |
+| `cd web && npm ci && npm run build` | Build web SPA |
+| `go test ./... -count=1` | Run Go tests |
 
-**Local dev requires two terminals:** `make dev-relay` and `make dev-web`.
+**Local dev requires two terminals:** `go run ./cmd/relay` and `cd web && npm run dev`.
 
-Set `DEV_MODE=1` when running the relay to bypass OIDC authentication.
-
-No test or lint commands exist yet.
+Copy `.env-template` to `.env` for configuration. The template has `DEV_MODE=1` set, which bypasses OIDC authentication.
 
 ## Architecture
 
