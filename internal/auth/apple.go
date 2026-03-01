@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/pem"
@@ -37,9 +38,15 @@ func GenerateAppleClientSecret(teamID, clientID, keyID string, privateKey *ecdsa
 
 // ParseP8PrivateKey parses an Apple .p8 private key file (PKCS#8 PEM).
 func ParseP8PrivateKey(pemData []byte) (*ecdsa.PrivateKey, error) {
-	block, _ := pem.Decode(pemData)
+	block, rest := pem.Decode(pemData)
 	if block == nil {
 		return nil, fmt.Errorf("no PEM block found")
+	}
+	if block.Type != "PRIVATE KEY" {
+		return nil, fmt.Errorf("expected PEM type \"PRIVATE KEY\", got %q", block.Type)
+	}
+	if len(bytes.TrimSpace(rest)) > 0 {
+		return nil, fmt.Errorf("unexpected trailing data after PEM block")
 	}
 
 	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)

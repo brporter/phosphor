@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -56,12 +57,21 @@ func TestGenerateAppleClientSecret(t *testing.T) {
 	}
 
 	// Verify header has kid
-	rawHeader, _ := base64.RawURLEncoding.DecodeString(strings.SplitN(secret, ".", 3)[0])
+	parts := strings.SplitN(secret, ".", 3)
+	if len(parts) != 3 {
+		t.Fatalf("JWT does not have 3 parts, got %d", len(parts))
+	}
+	rawHeader, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		t.Fatalf("decode JWT header: %v", err)
+	}
 	var header struct {
 		Alg string `json:"alg"`
 		Kid string `json:"kid"`
 	}
-	json.Unmarshal(rawHeader, &header)
+	if err := json.Unmarshal(rawHeader, &header); err != nil {
+		t.Fatalf("unmarshal JWT header: %v", err)
+	}
 	if header.Kid != "KEYID456" {
 		t.Errorf("kid = %q, want KEYID456", header.Kid)
 	}
@@ -89,5 +99,21 @@ func TestParseP8PrivateKey(t *testing.T) {
 
 	if !parsed.Equal(privKey) {
 		t.Error("parsed key does not match original")
+	}
+}
+
+func TestParseP8PrivateKey_RejectsRSA(t *testing.T) {
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(rsaKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pemData := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+	_, err = ParseP8PrivateKey(pemData)
+	if err == nil {
+		t.Fatal("expected error for RSA key, got nil")
 	}
 }
