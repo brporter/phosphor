@@ -6,8 +6,8 @@ import (
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.RelayURL != "ws://localhost:8080" {
-		t.Errorf("expected RelayURL %q, got %q", "ws://localhost:8080", cfg.RelayURL)
+	if cfg.RelayURL != DefaultRelayURL {
+		t.Errorf("expected RelayURL %q, got %q", DefaultRelayURL, cfg.RelayURL)
 	}
 }
 

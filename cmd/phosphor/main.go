@@ -70,7 +70,7 @@ func main() {
 		},
 	}
 
-	rootCmd.Flags().StringVar(&relayURL, "relay", "", "Relay server URL (default: ws://localhost:8080)")
+	rootCmd.Flags().StringVar(&relayURL, "relay", "", fmt.Sprintf("Relay server URL (default: %s)", cli.DefaultRelayURL))
 	rootCmd.Flags().StringVar(&token, "token", "", "Auth token (default: read from cache)")
 
 	var provider string

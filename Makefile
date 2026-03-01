@@ -5,7 +5,7 @@ all: build
 build: build-web build-cli build-relay
 
 build-cli:
-	go build -o bin/phosphor ./cmd/phosphor
+	go build -ldflags '-s -w -X github.com/brporter/phosphor/internal/cli.DefaultRelayURL=wss://phosphor.betaporter.dev' -o bin/phosphor ./cmd/phosphor
 
 build-relay:
 	go build -o bin/relay ./cmd/relay

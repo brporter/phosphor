@@ -11,10 +11,13 @@ type Config struct {
 	RelayURL string `json:"relay_url"`
 }
 
+// DefaultRelayURL is the default relay URL, overridden at build time via ldflags.
+var DefaultRelayURL = "ws://localhost:8080"
+
 // DefaultConfig returns the default configuration.
 func DefaultConfig() Config {
 	return Config{
-		RelayURL: "ws://localhost:8080",
+		RelayURL: DefaultRelayURL,
 	}
 }
 
