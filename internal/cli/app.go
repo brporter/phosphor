@@ -65,17 +65,18 @@ func (a *App) Run(ctx context.Context) error {
 		}
 
 		// Process exited — check restart mode
-		if a.Restart != "auto" {
-			// "manual" wait is handled inside runWithProcess
-			// "never" returns nil from runWithProcess
-			// Any unexpected mode also stops
+		switch a.Restart {
+		case "auto":
+			a.Logger.Info("process exited, restarting automatically")
+			fmt.Fprintf(os.Stderr, "Process exited. Restarting...\n")
+		case "manual":
+			// runWithProcess waited for TypeRestart and returned errProcessExited
+			a.Logger.Info("restarting process after manual trigger")
+		default:
+			// "never" returns nil from runWithProcess, so we won't reach here
 			a.Logger.Info("session ended")
 			return nil
 		}
-
-		// Auto mode: loop and create new process
-		a.Logger.Info("process exited, restarting automatically")
-		fmt.Fprintf(os.Stderr, "Process exited. Restarting...\n")
 	}
 }
 
