@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-func TestLogin_InvalidProvider(t *testing.T) {
+func TestLogin_InvalidProviderDeviceCode(t *testing.T) {
 	ctx := context.Background()
-	err := Login(ctx, "invalid", "ws://localhost", false)
+	err := Login(ctx, "invalid", "ws://localhost", true)
 	if err == nil {
 		t.Fatal("expected error for invalid provider, got nil")
 	}

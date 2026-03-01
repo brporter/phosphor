@@ -64,6 +64,7 @@ type AuthSessionData struct {
 type AuthSessionStoreI interface {
 	Create(ctx context.Context, provider, codeVerifier, source string) (AuthSessionData, error)
 	Get(ctx context.Context, id string) (AuthSessionData, bool, error)
+	SetProvider(ctx context.Context, id, provider, codeVerifier string) error
 	Complete(ctx context.Context, id, idToken string) error
 	Consume(ctx context.Context, id string) (string, bool, error)
 	Stop()

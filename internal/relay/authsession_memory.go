@@ -56,6 +56,17 @@ func (s *MemoryAuthSessionStore) Get(_ context.Context, id string) (AuthSessionD
 	return sess, true, nil
 }
 
+func (s *MemoryAuthSessionStore) SetProvider(_ context.Context, id, provider, codeVerifier string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sess, ok := s.sessions[id]; ok {
+		sess.Provider = provider
+		sess.CodeVerifier = codeVerifier
+		s.sessions[id] = sess
+	}
+	return nil
+}
+
 func (s *MemoryAuthSessionStore) Complete(_ context.Context, id, idToken string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

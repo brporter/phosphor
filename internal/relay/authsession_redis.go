@@ -75,6 +75,13 @@ func (s *RedisAuthSessionStore) Get(ctx context.Context, id string) (AuthSession
 	}, true, nil
 }
 
+func (s *RedisAuthSessionStore) SetProvider(ctx context.Context, id, provider, codeVerifier string) error {
+	return s.rdb.HSet(ctx, authKey(id), map[string]interface{}{
+		"provider":      provider,
+		"code_verifier": codeVerifier,
+	}).Err()
+}
+
 func (s *RedisAuthSessionStore) Complete(ctx context.Context, id, idToken string) error {
 	return s.rdb.HSet(ctx, authKey(id), "id_token", idToken).Err()
 }

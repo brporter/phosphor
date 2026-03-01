@@ -254,6 +254,105 @@ func (s *Server) HandleAuthPoll(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// HandleCLIStart creates an auth session with no provider selected yet.
+// POST /api/auth/cli-start
+func (s *Server) HandleCLIStart(w http.ResponseWriter, r *http.Request) {
+	sess, err := s.authSessions.Create(r.Context(), "", "", "cli")
+	if err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"session_id": sess.ID})
+}
+
+// HandleCLILogin serves a minimal HTML provider-picker page.
+// GET /api/auth/cli-login?session=SESSION_ID
+func (s *Server) HandleCLILogin(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.URL.Query().Get("session")
+	if sessionID == "" {
+		http.Error(w, "missing session parameter", http.StatusBadRequest)
+		return
+	}
+
+	_, ok, err := s.authSessions.Get(r.Context(), sessionID)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.Error(w, "invalid or expired session", http.StatusBadRequest)
+		return
+	}
+
+	providers := s.verifier.ProviderNames()
+	var buttons string
+	for _, p := range providers {
+		label := strings.ToUpper(p[:1]) + p[1:]
+		buttons += fmt.Sprintf(
+			`<button type="submit" name="provider" value="%s" style="display:block;width:100%%;padding:12px 24px;margin:8px 0;background:#1a1a1a;color:#00ff41;border:1px solid #00ff41;font-family:monospace;font-size:16px;cursor:pointer">Sign in with %s</button>`,
+			html.EscapeString(p), html.EscapeString(label),
+		)
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html>
+<head><title>Phosphor — Sign In</title></head>
+<body style="background:#0a0a0a;color:#00ff41;font-family:monospace;display:flex;justify-content:center;align-items:center;height:100vh;margin:0">
+<div style="text-align:center;max-width:320px">
+<h2>Phosphor</h2>
+<p>Choose a sign-in provider:</p>
+<form method="POST" action="%s/api/auth/cli-choose">
+<input type="hidden" name="session" value="%s">
+%s
+</form>
+</div>
+</body>
+</html>`,
+		html.EscapeString(s.baseURL),
+		html.EscapeString(sessionID),
+		buttons,
+	)
+}
+
+// HandleCLIChoose receives the provider choice, sets up PKCE, and redirects to OIDC.
+// POST /api/auth/cli-choose  form: session=ID&provider=microsoft
+func (s *Server) HandleCLIChoose(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	sessionID := r.FormValue("session")
+	provider := r.FormValue("provider")
+
+	if _, ok := s.verifier.GetProvider(provider); !ok {
+		http.Error(w, "unknown provider", http.StatusBadRequest)
+		return
+	}
+
+	_, ok, err := s.authSessions.Get(r.Context(), sessionID)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.Error(w, "invalid or expired session", http.StatusBadRequest)
+		return
+	}
+
+	verifier := generateCodeVerifier()
+	if err := s.authSessions.SetProvider(r.Context(), sessionID, provider, verifier); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Redirect to the authorize endpoint which reads provider+verifier from the session
+	target := fmt.Sprintf("%s/api/auth/authorize?session=%s", s.baseURL, url.QueryEscape(sessionID))
+	http.Redirect(w, r, target, http.StatusFound)
+}
+
 func (s *Server) renderAuthResult(w http.ResponseWriter, success bool, errMsg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if success {

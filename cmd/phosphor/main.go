@@ -14,6 +14,7 @@ func main() {
 	var relayURL string
 	var token string
 	var restart string
+	var logout bool
 
 	rootCmd := &cobra.Command{
 		Use:   "phosphor [-- command args...]",
@@ -27,6 +28,14 @@ func main() {
   ping localhost | phosphor
   tail -f /var/log/syslog | phosphor`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if logout {
+				if err := cli.ClearTokenCache(); err != nil {
+					return err
+				}
+				fmt.Println("Logged out successfully")
+				return nil
+			}
+
 			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 			cfg := cli.DefaultConfig()
@@ -59,6 +68,18 @@ func main() {
 				}
 			}
 
+			// Auto-login if no token available
+			if token == "" {
+				idToken, err := cli.BrowserLogin(context.Background(), cfg.RelayURL)
+				if err != nil {
+					return fmt.Errorf("auto-login failed: %w", err)
+				}
+				if err := cli.SaveTokenCache(&cli.TokenCache{AccessToken: idToken}); err != nil {
+					logger.Warn("failed to cache token", "err", err)
+				}
+				token = idToken
+			}
+
 			app := &cli.App{
 				Config:  cfg,
 				Token:   token,
@@ -75,6 +96,7 @@ func main() {
 	rootCmd.Flags().StringVar(&relayURL, "relay", "", fmt.Sprintf("Relay server URL (default: %s)", cli.DefaultRelayURL))
 	rootCmd.Flags().StringVar(&token, "token", "", "Auth token (default: read from cache)")
 	rootCmd.Flags().StringVar(&restart, "restart", "manual", "Process restart mode: manual, auto, never")
+	rootCmd.Flags().BoolVar(&logout, "logout", false, "Clear cached authentication tokens and exit")
 
 	var provider string
 	var useDeviceCode bool

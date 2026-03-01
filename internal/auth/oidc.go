@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -121,6 +122,18 @@ func (v *Verifier) VerifyToken(ctx context.Context, rawToken string) (*Identity,
 		return nil, fmt.Errorf("token verification failed: %w", lastErr)
 	}
 	return nil, errors.New("no OIDC providers configured")
+}
+
+// ProviderNames returns the names of all registered providers in sorted order.
+func (v *Verifier) ProviderNames() []string {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	names := make([]string, 0, len(v.providers))
+	for name := range v.providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // GetProvider returns the config for a named provider.

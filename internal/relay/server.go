@@ -40,6 +40,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/auth/callback", s.HandleAuthCallback)
 	mux.HandleFunc("GET /api/auth/poll", s.HandleAuthPoll)
 
+	// CLI provider-picker auth flow
+	mux.HandleFunc("POST /api/auth/cli-start", s.HandleCLIStart)
+	mux.HandleFunc("GET /api/auth/cli-login", s.HandleCLILogin)
+	mux.HandleFunc("POST /api/auth/cli-choose", s.HandleCLIChoose)
+
 	// Health check
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

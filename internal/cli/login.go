@@ -36,29 +36,27 @@ var supportedProviders = []string{"apple", "microsoft", "google"}
 func Login(ctx context.Context, providerName, relayURL string, useDeviceCode bool) error {
 	providerName = strings.ToLower(providerName)
 
-	valid := false
-	for _, p := range supportedProviders {
-		if p == providerName {
-			valid = true
-			break
-		}
-	}
-	if !valid {
-		return fmt.Errorf("unknown provider: %s (supported: %s)", providerName, strings.Join(supportedProviders, ", "))
-	}
-
 	if useDeviceCode {
+		valid := false
+		for _, p := range supportedProviders {
+			if p == providerName {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return fmt.Errorf("unknown provider: %s (supported: %s)", providerName, strings.Join(supportedProviders, ", "))
+		}
 		return loginDeviceCode(ctx, providerName)
 	}
 
-	token, err := BrowserLogin(ctx, relayURL, providerName)
+	token, err := BrowserLogin(ctx, relayURL)
 	if err != nil {
 		return fmt.Errorf("browser login: %w", err)
 	}
 
 	if err := SaveTokenCache(&TokenCache{
 		AccessToken: token,
-		Provider:    providerName,
 	}); err != nil {
 		return fmt.Errorf("save token: %w", err)
 	}

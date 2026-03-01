@@ -18,8 +18,8 @@ func TestBrowserLogin_Success(t *testing.T) {
 	pollCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case strings.HasSuffix(r.URL.Path, "/api/auth/login"):
-			json.NewEncoder(w).Encode(loginStartResponse{SessionID: "test-session", AuthURL: "http://example.com/auth"})
+		case strings.HasSuffix(r.URL.Path, "/api/auth/cli-start"):
+			json.NewEncoder(w).Encode(cliStartResponse{SessionID: "test-session"})
 		case strings.HasSuffix(r.URL.Path, "/api/auth/poll"):
 			pollCount++
 			if pollCount >= 1 {
@@ -36,7 +36,7 @@ func TestBrowserLogin_Success(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	token, err := BrowserLogin(ctx, relayURL, "test")
+	token, err := BrowserLogin(ctx, relayURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestBrowserLogin_RelayError(t *testing.T) {
 	openBrowserFn = func(url string) {}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/api/auth/login") {
+		if strings.HasSuffix(r.URL.Path, "/api/auth/cli-start") {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 		}
 	}))
@@ -62,7 +62,7 @@ func TestBrowserLogin_RelayError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	_, err := BrowserLogin(ctx, relayURL, "test")
+	_, err := BrowserLogin(ctx, relayURL)
 	if err == nil {
 		t.Fatal("expected error for relay 500, got nil")
 	}
@@ -78,8 +78,8 @@ func TestBrowserLogin_ContextCanceled(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case strings.HasSuffix(r.URL.Path, "/api/auth/login"):
-			json.NewEncoder(w).Encode(loginStartResponse{SessionID: "s1", AuthURL: "http://test/auth"})
+		case strings.HasSuffix(r.URL.Path, "/api/auth/cli-start"):
+			json.NewEncoder(w).Encode(cliStartResponse{SessionID: "s1"})
 		case strings.HasSuffix(r.URL.Path, "/api/auth/poll"):
 			json.NewEncoder(w).Encode(pollResponse{Status: "pending"})
 		}
@@ -91,7 +91,7 @@ func TestBrowserLogin_ContextCanceled(t *testing.T) {
 	go func() { time.Sleep(100 * time.Millisecond); cancel() }()
 
 	relayURL := strings.Replace(srv.URL, "http://", "ws://", 1)
-	_, err := BrowserLogin(ctx, relayURL, "test")
+	_, err := BrowserLogin(ctx, relayURL)
 	if err == nil {
 		t.Fatal("expected error for canceled context, got nil")
 	}
