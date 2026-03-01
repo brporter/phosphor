@@ -152,6 +152,13 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 					s.hub.BroadcastOutput(ctx, sessionID, encoded)
 				}
 			}
+		case protocol.TypeProcessExited:
+			s.hub.store.SetProcessExited(ctx, sessionID, true)
+			encoded, err := protocol.Encode(protocol.TypeProcessExited, payload)
+			if err == nil {
+				s.hub.BroadcastOutput(ctx, sessionID, encoded)
+			}
+			s.logger.Info("process exited", "session", sessionID)
 		case protocol.TypePong:
 			// heartbeat response, ignore
 		}

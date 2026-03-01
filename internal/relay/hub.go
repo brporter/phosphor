@@ -154,6 +154,28 @@ func (h *Hub) Reconnect(ctx context.Context, sessionID string, conn *websocket.C
 	return nil
 }
 
+// RestartProcess sends TypeRestart to the CLI and clears the ProcessExited flag.
+func (h *Hub) RestartProcess(ctx context.Context, sessionID string) error {
+	h.store.SetProcessExited(ctx, sessionID, false)
+
+	data, err := protocol.Encode(protocol.TypeRestart, nil)
+	if err != nil {
+		return err
+	}
+
+	// Send to local CLI
+	if ls, ok := h.GetLocal(sessionID); ok && ls.HasCLI() {
+		ls.SendToCLI(ctx, data)
+	} else if h.bus != nil {
+		// CLI on remote relay
+		h.bus.Publish(ctx, InputChannel(sessionID), data)
+	}
+
+	// Broadcast restart to all viewers
+	h.BroadcastOutput(ctx, sessionID, data)
+	return nil
+}
+
 // BroadcastOutput writes data to local viewers and publishes to the bus.
 func (h *Hub) BroadcastOutput(ctx context.Context, sessionID string, data []byte) {
 	if ls, ok := h.GetLocal(sessionID); ok {

@@ -11,7 +11,8 @@ type sessionListItem struct {
 	Cols    int    `json:"cols"`
 	Rows    int    `json:"rows"`
 	Command string `json:"command"`
-	Viewers int    `json:"viewers"`
+	Viewers       int    `json:"viewers"`
+	ProcessExited bool   `json:"process_exited"`
 }
 
 // HandleListSessions returns the sessions owned by the authenticated user.
@@ -40,7 +41,8 @@ func (s *Server) HandleListSessions(w http.ResponseWriter, r *http.Request) {
 			Cols:    info.Cols,
 			Rows:    info.Rows,
 			Command: info.Command,
-			Viewers: viewers,
+			Viewers:       viewers,
+			ProcessExited: info.ProcessExited,
 		})
 	}
 

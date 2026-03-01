@@ -102,6 +102,12 @@ func (s *Server) HandleViewerWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Notify CLI of new viewer count
 	ls.NotifyViewerCount(ctx)
 
+	// If process has exited, trigger a restart
+	if info.ProcessExited {
+		s.hub.RestartProcess(ctx, join.SessionID)
+		s.logger.Info("viewer triggered process restart", "session", sessionID)
+	}
+
 	s.logger.Info("viewer joined", "session", sessionID, "viewer", viewerID)
 
 	// Read loop: forward viewer input to CLI
