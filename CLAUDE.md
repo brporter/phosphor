@@ -44,6 +44,10 @@ CLI stdout → relay → broadcast to all viewers. Viewer keystrokes → relay �
 
 Defined in `internal/protocol/` (Go) and `web/src/lib/protocol.ts` (TypeScript) — **kept manually in sync**. Format: 1-byte type prefix + payload (raw bytes for Stdout/Stdin, JSON for control messages like Hello/Welcome/Join/Resize/Error).
 
+## VERY IMPORTANT: Bash Tool Usage
+
+**NEVER issue compound bash commands.** Each `git` or shell command must be a separate, single Bash tool call. Do NOT chain commands with `&&`, `;`, or `||`. This causes constant prompt loops and dramatically slows progress.
+
 ## Key Conventions
 
 - **Platform-specific Go files** use build tags: `pty_unix.go` (`//go:build !windows`) and `pty_windows.go` (`//go:build windows`)

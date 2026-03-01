@@ -6,6 +6,9 @@
 *.test
 *.out
 
+# Claude
+.claude/settings.local.json
+
 # Dependencies
 /vendor/
 

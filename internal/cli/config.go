@@ -12,7 +12,7 @@ type Config struct {
 }
 
 // DefaultRelayURL is the default relay URL, overridden at build time via ldflags.
-var DefaultRelayURL = "ws://localhost:8080"
+var DefaultRelayURL = "wss://phosphor.betaporter.dev"
 
 // DefaultConfig returns the default configuration.
 func DefaultConfig() Config {
