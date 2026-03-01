@@ -1,0 +1,432 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 60;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A1000021 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B1000021; };
+		A1000022 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B1000022; };
+		A1000001 /* PhosphorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000001; };
+		A1000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002; };
+		A1000003 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000003; };
+		A1000004 /* AuthUser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000004; };
+		A1000005 /* MessageType.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000005; };
+		A1000006 /* ProtocolCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000006; };
+		A1000007 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000007; };
+		A1000008 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000008; };
+		A1000009 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000009; };
+		A1000010 /* WebSocketManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000010; };
+		A1000011 /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000011; };
+		A1000012 /* SessionListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000012; };
+		A1000013 /* TerminalViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000013; };
+		A1000014 /* TerminalRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000014; };
+		A1000015 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000015; };
+		A1000016 /* SessionCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000016; };
+		A1000017 /* SessionListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000017; };
+		A1000018 /* TerminalContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000018; };
+		A1000019 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000019; };
+		A1000020 /* PhosphorTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000020; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		B1000001 /* PhosphorApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhosphorApp.swift; sourceTree = "<group>"; };
+		B1000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		B1000003 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
+		B1000004 /* AuthUser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthUser.swift; sourceTree = "<group>"; };
+		B1000005 /* MessageType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageType.swift; sourceTree = "<group>"; };
+		B1000006 /* ProtocolCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtocolCodec.swift; sourceTree = "<group>"; };
+		B1000007 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
+		B1000008 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		B1000009 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
+		B1000010 /* WebSocketManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketManager.swift; sourceTree = "<group>"; };
+		B1000011 /* AuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModel.swift; sourceTree = "<group>"; };
+		B1000012 /* SessionListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListViewModel.swift; sourceTree = "<group>"; };
+		B1000013 /* TerminalViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalViewModel.swift; sourceTree = "<group>"; };
+		B1000014 /* TerminalRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalRepresentable.swift; sourceTree = "<group>"; };
+		B1000015 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		B1000016 /* SessionCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCardView.swift; sourceTree = "<group>"; };
+		B1000017 /* SessionListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListView.swift; sourceTree = "<group>"; };
+		B1000018 /* TerminalContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalContainerView.swift; sourceTree = "<group>"; };
+		B1000019 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		B1000020 /* PhosphorTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhosphorTheme.swift; sourceTree = "<group>"; };
+		B1000021 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B1000022 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		B1000023 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		C1000001 /* Phosphor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Phosphor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D1000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000021 /* Assets.xcassets in Resources */,
+				A1000022 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D1000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		E1000001 = {
+			isa = PBXGroup;
+			children = (
+				E1000002 /* Phosphor */,
+				E1000010 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		E1000002 /* Phosphor */ = {
+			isa = PBXGroup;
+			children = (
+				B1000001 /* PhosphorApp.swift */,
+				B1000002 /* ContentView.swift */,
+				E1000003 /* Models */,
+				E1000004 /* Protocol */,
+				E1000005 /* Services */,
+				E1000006 /* ViewModels */,
+				E1000007 /* Views */,
+				E1000008 /* Terminal */,
+				E1000009 /* Theme */,
+				B1000021 /* Assets.xcassets */,
+				B1000023 /* Info.plist */,
+				B1000022 /* PrivacyInfo.xcprivacy */,
+			);
+			path = Phosphor;
+			sourceTree = "<group>";
+		};
+		E1000003 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				B1000003 /* Session.swift */,
+				B1000004 /* AuthUser.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		E1000004 /* Protocol */ = {
+			isa = PBXGroup;
+			children = (
+				B1000005 /* MessageType.swift */,
+				B1000006 /* ProtocolCodec.swift */,
+			);
+			path = Protocol;
+			sourceTree = "<group>";
+		};
+		E1000005 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				B1000007 /* KeychainHelper.swift */,
+				B1000008 /* APIClient.swift */,
+				B1000009 /* AuthService.swift */,
+				B1000010 /* WebSocketManager.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		E1000006 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				B1000011 /* AuthViewModel.swift */,
+				B1000012 /* SessionListViewModel.swift */,
+				B1000013 /* TerminalViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		E1000007 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				B1000015 /* LoginView.swift */,
+				B1000016 /* SessionCardView.swift */,
+				B1000017 /* SessionListView.swift */,
+				B1000018 /* TerminalContainerView.swift */,
+				B1000019 /* SettingsView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		E1000008 /* Terminal */ = {
+			isa = PBXGroup;
+			children = (
+				B1000014 /* TerminalRepresentable.swift */,
+			);
+			path = Terminal;
+			sourceTree = "<group>";
+		};
+		E1000009 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				B1000020 /* PhosphorTheme.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		E1000010 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				C1000001 /* Phosphor.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		F1000001 /* Phosphor */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = G1000003 /* Build configuration list for PBXNativeTarget "Phosphor" */;
+			buildPhases = (
+				F1000002 /* Sources */,
+				D1000001 /* Frameworks */,
+				D1000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Phosphor;
+			packageProductDependencies = (
+				H1000001 /* SwiftTerm */,
+			);
+			productName = Phosphor;
+			productReference = C1000001 /* Phosphor.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F1000010 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = G1000001 /* Build configuration list for PBXProject "Phosphor" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = E1000001;
+			packageReferences = (
+				H1000002 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
+			);
+			productRefGroup = E1000010 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F1000001 /* Phosphor */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		F1000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000001 /* PhosphorApp.swift in Sources */,
+				A1000002 /* ContentView.swift in Sources */,
+				A1000003 /* Session.swift in Sources */,
+				A1000004 /* AuthUser.swift in Sources */,
+				A1000005 /* MessageType.swift in Sources */,
+				A1000006 /* ProtocolCodec.swift in Sources */,
+				A1000007 /* KeychainHelper.swift in Sources */,
+				A1000008 /* APIClient.swift in Sources */,
+				A1000009 /* AuthService.swift in Sources */,
+				A1000010 /* WebSocketManager.swift in Sources */,
+				A1000011 /* AuthViewModel.swift in Sources */,
+				A1000012 /* SessionListViewModel.swift in Sources */,
+				A1000013 /* TerminalViewModel.swift in Sources */,
+				A1000014 /* TerminalRepresentable.swift in Sources */,
+				A1000015 /* LoginView.swift in Sources */,
+				A1000016 /* SessionCardView.swift in Sources */,
+				A1000017 /* SessionListView.swift in Sources */,
+				A1000018 /* TerminalContainerView.swift in Sources */,
+				A1000019 /* SettingsView.swift in Sources */,
+				A1000020 /* PhosphorTheme.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		G1000010 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		G1000011 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		G1000020 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Phosphor/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Phosphor;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.betaporter.phosphor;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		G1000021 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Phosphor/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Phosphor;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.betaporter.phosphor;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		G1000001 /* Build configuration list for PBXProject "Phosphor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				G1000010 /* Debug */,
+				G1000011 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		G1000003 /* Build configuration list for PBXNativeTarget "Phosphor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				G1000020 /* Debug */,
+				G1000021 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		H1000002 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		H1000001 /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = H1000002 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = F1000010 /* Project object */;
+}
