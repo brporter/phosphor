@@ -11,11 +11,11 @@ const (
 	TypeJoined      byte = 0x13
 	TypeReconnect   byte = 0x14
 	TypeEnd         byte = 0x15
-	TypeError       byte = 0x16
-	TypeViewerCount byte = 0x20
-	TypeMode        byte = 0x21
+	TypeError         byte = 0x16
 	TypeProcessExited byte = 0x17
 	TypeRestart       byte = 0x18
+	TypeViewerCount   byte = 0x20
+	TypeMode          byte = 0x21
 	TypePing          byte = 0x30
 	TypePong          byte = 0x31
 )
