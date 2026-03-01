@@ -103,6 +103,12 @@ final class TerminalViewModel {
             errorMessage = message
             connectionState = .error
 
+        case .processExited:
+            break  // handled in Task 3
+
+        case .restart:
+            break  // handled in Task 3
+
         case .disconnected:
             if connectionState != .ended {
                 connectionState = .disconnected

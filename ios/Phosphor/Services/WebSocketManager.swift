@@ -10,6 +10,8 @@ enum WebSocketEvent {
     case mode(String)
     case end
     case error(String)
+    case processExited(Int)
+    case restart
     case disconnected
 }
 
@@ -144,6 +146,12 @@ final class WebSocketManager: NSObject, @unchecked Sendable {
             if let err: ErrorPayload = try? ProtocolCodec.decodeJSON(payload) {
                 continuation?.yield(.error("\(err.code): \(err.message)"))
             }
+        case .processExited:
+            if let info: ProcessExitedPayload = try? ProtocolCodec.decodeJSON(payload) {
+                continuation?.yield(.processExited(info.exitCode))
+            }
+        case .restart:
+            continuation?.yield(.restart)
         case .ping:
             let pong = ProtocolCodec.encode(type: .pong)
             webSocketTask?.send(.data(pong)) { _ in }
