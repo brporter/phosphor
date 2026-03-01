@@ -22,6 +22,8 @@ type pollResponse struct {
 	IDToken string `json:"id_token"`
 }
 
+var openBrowserFn = openBrowser
+
 // BrowserLogin performs relay-mediated browser-based authentication.
 func BrowserLogin(ctx context.Context, relayURL, provider string) (string, error) {
 	httpBase := relayURL
@@ -46,7 +48,7 @@ func BrowserLogin(ctx context.Context, relayURL, provider string) (string, error
 
 	fmt.Fprintf(os.Stderr, "\nOpening browser for authentication...\n")
 	fmt.Fprintf(os.Stderr, "If the browser doesn't open, visit: %s\n\n", loginResp.AuthURL)
-	openBrowser(loginResp.AuthURL)
+	openBrowserFn(loginResp.AuthURL)
 
 	fmt.Fprintf(os.Stderr, "Waiting for authentication...\n")
 	pollURL := fmt.Sprintf("%s/api/auth/poll?session=%s", httpBase, loginResp.SessionID)

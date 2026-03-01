@@ -6,10 +6,20 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { UserManager, type User } from "oidc-client-ts";
+
+interface UserProfile {
+  sub: string;
+  iss: string;
+  email?: string;
+}
+
+interface AuthUser {
+  id_token: string;
+  profile: UserProfile;
+}
 
 interface AuthContextValue {
-  user: User | null;
+  user: AuthUser | null;
   isLoading: boolean;
   login: (provider: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -24,67 +34,55 @@ export const AuthContext = createContext<AuthContextValue>({
   getToken: () => null,
 });
 
-// OIDC provider configurations
-const providerConfigs: Record<
-  string,
-  { authority: string; client_id_env: string; scope: string }
-> = {
-  microsoft: {
-    authority: "https://login.microsoftonline.com/common/v2.0",
-    client_id_env: "VITE_MICROSOFT_CLIENT_ID",
-    scope: "openid profile email",
-  },
-  google: {
-    authority: "https://accounts.google.com",
-    client_id_env: "VITE_GOOGLE_CLIENT_ID",
-    scope: "openid profile email",
-  },
-  apple: {
-    authority: "https://appleid.apple.com",
-    client_id_env: "VITE_APPLE_CLIENT_ID",
-    scope: "openid name email",
-  },
-};
+const STORAGE_KEY = "phosphor_user";
+const SESSION_KEY = "phosphor_auth_session";
 
-function createUserManager(provider: string): UserManager | null {
-  const config = providerConfigs[provider];
-  if (!config) return null;
+function parseJwtPayload(token: string): UserProfile {
+  const parts = token.split(".");
+  const payload = JSON.parse(atob(parts[1] ?? ""));
+  return { sub: payload.sub, iss: payload.iss, email: payload.email };
+}
 
-  const clientId = import.meta.env[config.client_id_env] as string | undefined;
-  if (!clientId) return null;
+function saveUser(user: AuthUser) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+}
 
-  return new UserManager({
-    authority: config.authority,
-    client_id: clientId,
-    redirect_uri: `${window.location.origin}/auth/callback`,
-    post_logout_redirect_uri: window.location.origin,
-    scope: config.scope,
-    response_type: "code",
-  });
+function loadUser(): AuthUser | null {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const user = JSON.parse(raw) as AuthUser;
+    // Check token expiry
+    const parts = user.id_token.split(".");
+    const payload = JSON.parse(atob(parts[1] ?? ""));
+    if (payload.exp && payload.exp * 1000 < Date.now()) {
+      localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+    return user;
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
+    return null;
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Try to restore session on mount
   useEffect(() => {
-    // Check for pending Apple auth session
-    const appleSession = localStorage.getItem("phosphor_auth_session");
-    if (appleSession) {
-      localStorage.removeItem("phosphor_auth_session");
+    // Check for pending auth session (returning from provider redirect)
+    const sessionId = localStorage.getItem(SESSION_KEY);
+    if (sessionId) {
+      localStorage.removeItem(SESSION_KEY);
       const poll = async () => {
-        const resp = await fetch(`/api/auth/poll?session=${appleSession}`);
+        const resp = await fetch(`/api/auth/poll?session=${sessionId}`);
         const data = await resp.json();
         if (data.status === "complete" && data.id_token) {
-          const payload = JSON.parse(atob(data.id_token.split(".")[1]));
-          setUser({
-            id_token: data.id_token,
-            access_token: data.id_token,
-            token_type: "Bearer",
-            profile: { sub: payload.sub, iss: payload.iss, email: payload.email },
-            expired: false,
-          } as unknown as User);
+          const profile = parseJwtPayload(data.id_token);
+          const u: AuthUser = { id_token: data.id_token, profile };
+          saveUser(u);
+          setUser(u);
         }
         setIsLoading(false);
       };
@@ -92,61 +90,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const provider = localStorage.getItem("phosphor_provider") ?? "microsoft";
-    const mgr = createUserManager(provider);
-    if (mgr) {
-      mgr
-        .getUser()
-        .then((u) => setUser(u))
-        .finally(() => setIsLoading(false));
-    } else {
-      // Dev mode: no OIDC configured
-      setIsLoading(false);
-    }
+    // Restore cached session
+    const cached = loadUser();
+    setUser(cached);
+    setIsLoading(false);
   }, []);
 
   const login = useCallback(async (provider: string) => {
-    localStorage.setItem("phosphor_provider", provider);
+    const resp = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider }),
+    });
 
-    // Apple uses relay-mediated flow due to form_post requirement
-    if (provider === "apple") {
-      const resp = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: "apple" }),
-      });
-      const { auth_url, session_id } = await resp.json();
-      localStorage.setItem("phosphor_auth_session", session_id);
-      window.location.href = auth_url;
-      return;
+    if (!resp.ok) {
+      throw new Error(`Login failed: ${resp.status}`);
     }
 
-    const mgr = createUserManager(provider);
-    if (!mgr) {
-      // Dev mode fallback
-      setUser({
-        id_token: "dev:anonymous",
-        access_token: "dev:anonymous",
-        token_type: "Bearer",
-        profile: { sub: "anonymous", iss: "dev" },
-        expired: false,
-      } as unknown as User);
-      return;
-    }
-    await mgr.signinRedirect();
+    const { auth_url, session_id } = await resp.json();
+    localStorage.setItem(SESSION_KEY, session_id);
+    window.location.href = auth_url;
   }, []);
 
   const logout = useCallback(async () => {
-    const provider = localStorage.getItem("phosphor_provider") ?? "microsoft";
-    const mgr = createUserManager(provider);
+    localStorage.removeItem(STORAGE_KEY);
     setUser(null);
-    if (mgr) {
-      await mgr.signoutRedirect();
-    }
   }, []);
 
   const getToken = useCallback(() => {
-    return user?.id_token ?? user?.access_token ?? null;
+    return user?.id_token ?? null;
   }, [user]);
 
   const value = useMemo(
