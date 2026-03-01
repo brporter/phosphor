@@ -64,7 +64,8 @@ jobs:
               "APPLE_CLIENT_ID=${{ secrets.APPLE_CLIENT_ID }}" \
               "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" \
               "APPLE_KEY_ID=${{ secrets.APPLE_KEY_ID }}" \
-              "APPLE_PRIVATE_KEY=${{ secrets.APPLE_PRIVATE_KEY }}"
+              "APPLE_PRIVATE_KEY=${{ secrets.APPLE_PRIVATE_KEY }}" \
+              "REDIS_URL=${{ secrets.REDIS_URL }}"
 
   # ── Build CLI for all platforms, create GitHub Release on PR merge ──
   release:
