@@ -13,6 +13,7 @@ import (
 func main() {
 	var relayURL string
 	var token string
+	var restart string
 
 	rootCmd := &cobra.Command{
 		Use:   "phosphor [-- command args...]",
@@ -64,6 +65,7 @@ func main() {
 				Logger:  logger,
 				Command: command,
 				Mode:    mode,
+				Restart: restart,
 			}
 
 			return app.Run(context.Background())
@@ -72,6 +74,7 @@ func main() {
 
 	rootCmd.Flags().StringVar(&relayURL, "relay", "", fmt.Sprintf("Relay server URL (default: %s)", cli.DefaultRelayURL))
 	rootCmd.Flags().StringVar(&token, "token", "", "Auth token (default: read from cache)")
+	rootCmd.Flags().StringVar(&restart, "restart", "manual", "Process restart mode: manual, auto, never")
 
 	var provider string
 	var useDeviceCode bool

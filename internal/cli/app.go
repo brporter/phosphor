@@ -22,6 +22,7 @@ type App struct {
 	Logger  *slog.Logger
 	Command []string // for PTY mode
 	Mode    string   // "pty" or "pipe"
+	Restart string   // "manual", "auto", "never"
 }
 
 var errProcessExited = errors.New("process exited")
