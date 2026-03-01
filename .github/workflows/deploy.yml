@@ -107,18 +107,17 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const { data: prs } = await github.rest.pulls.list({
+            // Use listPullRequestsAssociatedWithCommit — works with squash,
+            // rebase, and regular merge strategies.
+            const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              state: 'closed',
-              sort: 'updated',
-              direction: 'desc',
-              per_page: 10
+              commit_sha: context.sha
             });
-            const pr = prs.find(p => p.merge_commit_sha === context.sha);
-            if (pr) {
-              fs.writeFileSync('release-notes.md', pr.body || 'No description provided.');
-              core.setOutput('title', pr.title);
+            const merged = prs.find(p => p.merged_at !== null);
+            if (merged) {
+              fs.writeFileSync('release-notes.md', merged.body || 'No description provided.');
+              core.setOutput('title', merged.title);
               core.setOutput('found', 'true');
             } else {
               fs.writeFileSync('release-notes.md', `Release from commit ${context.sha.substring(0, 7)}`);
