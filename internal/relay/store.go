@@ -21,6 +21,7 @@ type SessionInfo struct {
 	Rows           int
 	Disconnected   bool
 	DisconnectedAt time.Time
+	ProcessExited  bool
 }
 
 // SessionStore persists session metadata. Implementations: MemorySessionStore, RedisSessionStore.
@@ -34,6 +35,7 @@ type SessionStore interface {
 	UpdateDimensions(ctx context.Context, sessionID string, cols, rows int) error
 	ScheduleExpiry(ctx context.Context, sessionID string, grace time.Duration) error
 	CancelExpiry(ctx context.Context, sessionID string) error
+	SetProcessExited(ctx context.Context, sessionID string, exited bool) error
 }
 
 // MessageBus provides cross-relay pub/sub messaging. Implementations: MemoryMessageBus, RedisMessageBus.

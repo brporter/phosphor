@@ -60,6 +60,7 @@ func (s *RedisSessionStore) Register(ctx context.Context, info SessionInfo) erro
 		"rows":             info.Rows,
 		"disconnected":     "false",
 		"disconnected_at":  "",
+		"process_exited":   "false",
 	})
 
 	pipe.SAdd(ctx, ownerKey(info.OwnerProvider, info.OwnerSub), info.ID)
@@ -98,6 +99,7 @@ func (s *RedisSessionStore) Get(ctx context.Context, sessionID string) (SessionI
 	cols, _ := strconv.Atoi(vals["cols"])
 	rows, _ := strconv.Atoi(vals["rows"])
 	disconnected := vals["disconnected"] == "true"
+	processExited := vals["process_exited"] == "true"
 
 	var disconnectedAt time.Time
 	if vals["disconnected_at"] != "" {
@@ -116,6 +118,7 @@ func (s *RedisSessionStore) Get(ctx context.Context, sessionID string) (SessionI
 		Rows:           rows,
 		Disconnected:   disconnected,
 		DisconnectedAt: disconnectedAt,
+		ProcessExited:  processExited,
 	}, true, nil
 }
 
@@ -171,6 +174,14 @@ func (s *RedisSessionStore) ScheduleExpiry(ctx context.Context, sessionID string
 
 func (s *RedisSessionStore) CancelExpiry(ctx context.Context, sessionID string) error {
 	return s.rdb.Del(ctx, expiryKey(sessionID)).Err()
+}
+
+func (s *RedisSessionStore) SetProcessExited(ctx context.Context, sessionID string, exited bool) error {
+	val := "false"
+	if exited {
+		val = "true"
+	}
+	return s.rdb.HSet(ctx, sessionKey(sessionID), "process_exited", val).Err()
 }
 
 // StartExpiryPoller periodically checks for disconnected sessions whose expiry key has vanished.

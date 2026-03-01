@@ -140,3 +140,15 @@ func (m *MemorySessionStore) CancelExpiry(_ context.Context, sessionID string) e
 	}
 	return nil
 }
+
+func (m *MemorySessionStore) SetProcessExited(_ context.Context, sessionID string, exited bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	info, ok := m.sessions[sessionID]
+	if !ok {
+		return nil
+	}
+	info.ProcessExited = exited
+	m.sessions[sessionID] = info
+	return nil
+}
