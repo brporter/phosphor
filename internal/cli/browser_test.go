@@ -17,6 +17,7 @@ func TestBrowserLogin_Success(t *testing.T) {
 
 	pollCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/api/auth/cli-start"):
 			json.NewEncoder(w).Encode(cliStartResponse{SessionID: "test-session"})
@@ -77,6 +78,7 @@ func TestBrowserLogin_ContextCanceled(t *testing.T) {
 	openBrowserFn = func(url string) {}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/api/auth/cli-start"):
 			json.NewEncoder(w).Encode(cliStartResponse{SessionID: "s1"})
