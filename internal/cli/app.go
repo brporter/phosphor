@@ -37,11 +37,50 @@ var backoffSchedule = []time.Duration{
 	30 * time.Second,
 }
 
-// Run starts the CLI session with automatic reconnection.
+// connectionResult is the structured result from a single connection attempt.
+type connectionResult struct {
+	err           error
+	processExited bool
+	exitCode      int
+	ws            *WSConn // keep WebSocket alive for manual restart wait
+}
+
+// Run starts the CLI session with restart support.
 func (a *App) Run(ctx context.Context) error {
 	appCtx, appCancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer appCancel()
 
+	for {
+		err := a.runWithProcess(appCtx)
+		if appCtx.Err() != nil {
+			a.Logger.Info("session ended")
+			return nil
+		}
+		if !errors.Is(err, errProcessExited) {
+			// Not a process exit — either success or fatal error
+			if err != nil {
+				return err
+			}
+			return nil
+		}
+
+		// Process exited — check restart mode
+		if a.Restart != "auto" {
+			// "manual" wait is handled inside runWithProcess
+			// "never" returns nil from runWithProcess
+			// Any unexpected mode also stops
+			a.Logger.Info("session ended")
+			return nil
+		}
+
+		// Auto mode: loop and create new process
+		a.Logger.Info("process exited, restarting automatically")
+		fmt.Fprintf(os.Stderr, "Process exited. Restarting...\n")
+	}
+}
+
+// runWithProcess manages the PTY lifecycle and reconnection loop for a single process.
+func (a *App) runWithProcess(appCtx context.Context) error {
 	var cols, rows int
 	var proc io.ReadWriteCloser
 	var ptyProc PTYProcess
@@ -66,20 +105,60 @@ func (a *App) Run(ctx context.Context) error {
 	attempt := 0
 
 	for {
-		err := a.runConnection(appCtx, proc, ptyProc, cols, rows, &sessionID, &reconnectToken)
-		if errors.Is(err, errProcessExited) {
-			a.Logger.Info("session ended")
-			return nil
+		result := a.runConnection(appCtx, proc, ptyProc, cols, rows, &sessionID, &reconnectToken)
+
+		if result.processExited {
+			switch a.Restart {
+			case "manual":
+				if result.ws != nil {
+					// Send ProcessExited to relay, wait for TypeRestart
+					exitPayload := protocol.ProcessExited{ExitCode: result.exitCode}
+					if err := result.ws.Send(appCtx, protocol.TypeProcessExited, exitPayload); err != nil {
+						return fmt.Errorf("send process exited: %w", err)
+					}
+					fmt.Fprintf(os.Stderr, "Process exited (code %d). Waiting for restart...\n", result.exitCode)
+					a.Logger.Info("waiting for restart signal", "exit_code", result.exitCode)
+
+					// Wait loop for TypeRestart
+					for {
+						mt, _, recvErr := result.ws.Receive(appCtx)
+						if recvErr != nil {
+							a.Logger.Info("connection lost while waiting for restart", "err", recvErr)
+							return fmt.Errorf("connection lost while waiting for restart")
+						}
+						if mt == protocol.TypeRestart {
+							a.Logger.Info("restart signal received")
+							fmt.Fprintf(os.Stderr, "Restart signal received. Restarting process...\n")
+							result.ws.Close()
+							return errProcessExited // triggers outer loop in Run()
+						}
+						if mt == protocol.TypePing {
+							result.ws.Send(appCtx, protocol.TypePong, nil)
+						}
+					}
+				}
+				// No ws available, just end
+				return nil
+			case "auto":
+				if result.ws != nil {
+					result.ws.Close()
+				}
+				return errProcessExited
+			default: // "never" or unset
+				if result.ws != nil {
+					result.ws.Close()
+				}
+				return nil
+			}
 		}
-		if appCtx.Err() != nil {
-			a.Logger.Info("session ended")
+
+		if result.err == nil || appCtx.Err() != nil {
 			return nil
 		}
 
-		// Pick backoff delay
+		// Connection lost — retry with backoff
 		delay := backoffSchedule[min(attempt, len(backoffSchedule)-1)]
 		attempt++
-
 		fmt.Fprintf(os.Stderr, "Relay disconnected. Reconnecting in %s...\n", delay)
 		a.Logger.Info("relay disconnected, will retry", "delay", delay, "attempt", attempt)
 
@@ -99,15 +178,14 @@ func (a *App) runConnection(
 	ptyProc PTYProcess,
 	cols, rows int,
 	sessionID, reconnectToken *string,
-) error {
+) connectionResult {
 	a.Logger.Info("connecting to relay", "url", a.Config.RelayURL)
 
 	wsURL := a.Config.RelayURL + "/ws/cli"
 	ws, err := ConnectWebSocket(appCtx, wsURL)
 	if err != nil {
-		return fmt.Errorf("connect to relay: %w", err)
+		return connectionResult{err: fmt.Errorf("connect to relay: %w", err)}
 	}
-	defer ws.Close()
 
 	// Send Hello
 	hello := protocol.Hello{
@@ -120,25 +198,30 @@ func (a *App) runConnection(
 		ReconnectToken: *reconnectToken,
 	}
 	if err := ws.Send(appCtx, protocol.TypeHello, hello); err != nil {
-		return fmt.Errorf("send hello: %w", err)
+		ws.Close()
+		return connectionResult{err: fmt.Errorf("send hello: %w", err)}
 	}
 
 	// Read Welcome
 	msgType, payload, err := ws.Receive(appCtx)
 	if err != nil {
-		return fmt.Errorf("receive welcome: %w", err)
+		ws.Close()
+		return connectionResult{err: fmt.Errorf("receive welcome: %w", err)}
 	}
 	if msgType == protocol.TypeError {
 		var e protocol.Error
 		protocol.DecodeJSON(payload, &e)
-		return fmt.Errorf("server error: %s: %s", e.Code, e.Message)
+		ws.Close()
+		return connectionResult{err: fmt.Errorf("server error: %s: %s", e.Code, e.Message)}
 	}
 	if msgType != protocol.TypeWelcome {
-		return fmt.Errorf("unexpected message type: 0x%02x", msgType)
+		ws.Close()
+		return connectionResult{err: fmt.Errorf("unexpected message type: 0x%02x", msgType)}
 	}
 	var welcome protocol.Welcome
 	if err := protocol.DecodeJSON(payload, &welcome); err != nil {
-		return fmt.Errorf("decode welcome: %w", err)
+		ws.Close()
+		return connectionResult{err: fmt.Errorf("decode welcome: %w", err)}
 	}
 
 	*sessionID = welcome.SessionID
@@ -216,11 +299,11 @@ func (a *App) runConnection(
 
 	<-connCtx.Done()
 
-	// Check if the process itself died
 	select {
 	case <-procDead:
-		return errProcessExited
+		return connectionResult{processExited: true, exitCode: 0, ws: ws}
 	default:
-		return fmt.Errorf("connection lost")
+		ws.Close()
+		return connectionResult{err: fmt.Errorf("connection lost")}
 	}
 }
