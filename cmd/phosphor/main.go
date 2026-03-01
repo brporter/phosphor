@@ -74,14 +74,20 @@ func main() {
 	rootCmd.Flags().StringVar(&token, "token", "", "Auth token (default: read from cache)")
 
 	var provider string
+	var useDeviceCode bool
 	loginCmd := &cobra.Command{
 		Use:   "login",
 		Short: "Authenticate with an identity provider",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return cli.Login(context.Background(), provider)
+			relay := relayURL
+			if relay == "" {
+				relay = cli.DefaultConfig().RelayURL
+			}
+			return cli.Login(context.Background(), provider, relay, useDeviceCode)
 		},
 	}
-	loginCmd.Flags().StringVar(&provider, "provider", "microsoft", "OIDC provider (microsoft, google)")
+	loginCmd.Flags().StringVar(&provider, "provider", "microsoft", "OIDC provider (apple, microsoft, google)")
+	loginCmd.Flags().BoolVar(&useDeviceCode, "device-code", false, "Use device code flow instead of browser (Microsoft/Google only)")
 
 	logoutCmd := &cobra.Command{
 		Use:   "logout",
