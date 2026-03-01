@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,11 +13,15 @@ import (
 
 // ProviderConfig holds OIDC configuration for a single identity provider.
 type ProviderConfig struct {
-	Name         string // "microsoft", "google", "apple"
-	Issuer       string
-	ClientID     string
-	ClientSecret string // empty for public clients (CLI)
+	Name          string // "microsoft", "google", "apple"
+	Issuer        string
+	ClientID      string
+	ClientSecret  string // empty for public clients (CLI)
 	DeviceAuthURL string // for device code flow
+	// Apple-specific fields
+	TeamID     string            // Apple Developer Team ID
+	KeyID      string            // Apple key ID
+	PrivateKey *ecdsa.PrivateKey // Apple P8 signing key
 }
 
 // ErrNoToken is returned when no auth token is provided.
@@ -125,4 +130,38 @@ func (v *Verifier) GetOIDCProvider(name string) (*oidc.Provider, bool) {
 		return nil, false
 	}
 	return entry.provider, true
+}
+
+// GetAuthEndpoint returns the authorization endpoint for a named provider.
+func (v *Verifier) GetAuthEndpoint(name string) (string, bool) {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	entry, ok := v.providers[name]
+	if !ok {
+		return "", false
+	}
+	var claims struct {
+		AuthURL string `json:"authorization_endpoint"`
+	}
+	if err := entry.provider.Claims(&claims); err != nil {
+		return "", false
+	}
+	return claims.AuthURL, true
+}
+
+// GetTokenEndpoint returns the token endpoint for a named provider.
+func (v *Verifier) GetTokenEndpoint(name string) (string, bool) {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	entry, ok := v.providers[name]
+	if !ok {
+		return "", false
+	}
+	var claims struct {
+		TokenURL string `json:"token_endpoint"`
+	}
+	if err := entry.provider.Claims(&claims); err != nil {
+		return "", false
+	}
+	return claims.TokenURL, true
 }
