@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brporter/phosphor/internal/auth"
 )
@@ -44,7 +45,11 @@ func newTestAuthServer(t *testing.T) *Server {
 		json.NewEncoder(w).Encode(map[string]string{"id_token": "mock-id-token-value"})
 	})
 
-	hub := NewHub(slog.Default())
+	store := NewMemorySessionStore()
+	hub := NewHub(store, nil, "test", slog.Default())
+	store.SetExpiryCallback(func(ctx context.Context, id string) {
+		hub.Unregister(ctx, id)
+	})
 	verifier := auth.NewVerifier(slog.Default())
 	err := verifier.AddProvider(context.Background(), auth.ProviderConfig{
 		Name:     "test",
@@ -55,7 +60,10 @@ func newTestAuthServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 
-	return NewServer(hub, slog.Default(), "http://localhost:8080", verifier, true)
+	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
+	t.Cleanup(authSessions.Stop)
+
+	return NewServer(hub, slog.Default(), "http://localhost:8080", verifier, true, authSessions)
 }
 
 // --- PKCE helper tests ---
@@ -168,9 +176,13 @@ func TestHandleAuthLogin_UnknownProvider(t *testing.T) {
 
 func TestHandleAuthAuthorize_Success(t *testing.T) {
 	s := newTestAuthServer(t)
+	ctx := context.Background()
 
 	// Create a real session in the store first.
-	sess := s.authSessions.Create("test", "test-code-verifier", "cli")
+	sess, err := s.authSessions.Create(ctx, "test", "test-code-verifier", "cli")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
 
 	r := httptest.NewRequest(http.MethodGet, "/api/auth/authorize?session="+sess.ID, nil)
 	w := httptest.NewRecorder()
@@ -187,9 +199,9 @@ func TestHandleAuthAuthorize_Success(t *testing.T) {
 		t.Fatal("Location header is empty")
 	}
 
-	parsed, err := url.Parse(location)
-	if err != nil {
-		t.Fatalf("parse Location %q: %v", location, err)
+	parsed, parseErr := url.Parse(location)
+	if parseErr != nil {
+		t.Fatalf("parse Location %q: %v", location, parseErr)
 	}
 
 	q := parsed.Query()
@@ -271,9 +283,13 @@ func TestHandleAuthCallback_InvalidSession(t *testing.T) {
 
 func TestHandleAuthCallback_Success(t *testing.T) {
 	s := newTestAuthServer(t)
+	ctx := context.Background()
 
 	// Pre-create an auth session so the handler can look it up.
-	sess := s.authSessions.Create("test", "test-code-verifier", "cli")
+	sess, err := s.authSessions.Create(ctx, "test", "test-code-verifier", "cli")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
 
 	target := "/api/auth/callback?code=auth-code&state=" + sess.ID
 	r := httptest.NewRequest(http.MethodGet, target, nil)
@@ -289,7 +305,10 @@ func TestHandleAuthCallback_Success(t *testing.T) {
 	}
 
 	// The session must have been completed — Consume should return the mock token.
-	token, ok := s.authSessions.Consume(sess.ID)
+	token, ok, consumeErr := s.authSessions.Consume(ctx, sess.ID)
+	if consumeErr != nil {
+		t.Fatalf("Consume error: %v", consumeErr)
+	}
 	if !ok {
 		t.Fatal("Consume returned false; session was not completed")
 	}
@@ -300,8 +319,12 @@ func TestHandleAuthCallback_Success(t *testing.T) {
 
 func TestHandleAuthCallback_POST(t *testing.T) {
 	s := newTestAuthServer(t)
+	ctx := context.Background()
 
-	sess := s.authSessions.Create("test", "test-code-verifier-post", "cli")
+	sess, err := s.authSessions.Create(ctx, "test", "test-code-verifier-post", "cli")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
 
 	form := url.Values{
 		"code":  {"post-auth-code"},
@@ -325,8 +348,12 @@ func TestHandleAuthCallback_POST(t *testing.T) {
 
 func TestHandleAuthPoll_Pending(t *testing.T) {
 	s := newTestAuthServer(t)
+	ctx := context.Background()
 
-	sess := s.authSessions.Create("test", "verifier", "cli")
+	sess, err := s.authSessions.Create(ctx, "test", "verifier", "cli")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
 
 	r := httptest.NewRequest(http.MethodGet, "/api/auth/poll?session="+sess.ID, nil)
 	w := httptest.NewRecorder()
@@ -353,9 +380,13 @@ func TestHandleAuthPoll_Pending(t *testing.T) {
 
 func TestHandleAuthPoll_Complete(t *testing.T) {
 	s := newTestAuthServer(t)
+	ctx := context.Background()
 
-	sess := s.authSessions.Create("test", "verifier", "cli")
-	s.authSessions.Complete(sess.ID, "completed-id-token")
+	sess, err := s.authSessions.Create(ctx, "test", "verifier", "cli")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	s.authSessions.Complete(ctx, sess.ID, "completed-id-token")
 
 	r := httptest.NewRequest(http.MethodGet, "/api/auth/poll?session="+sess.ID, nil)
 	w := httptest.NewRecorder()

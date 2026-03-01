@@ -17,7 +17,7 @@ import (
 
 // newWSPair creates a matched server/client WebSocket pair for testing.
 // The returned serverConn is the connection as seen from the server side
-// (i.e. what you pass into a Session), and clientConn is what you read
+// (i.e. what you pass into a LocalSession), and clientConn is what you read
 // from in assertions.
 func newWSPair(t *testing.T) (serverConn *websocket.Conn, clientConn *websocket.Conn) {
 	t.Helper()
@@ -85,142 +85,133 @@ func newTestLogger() *slog.Logger {
 	return slog.Default()
 }
 
-// TestNewSession verifies that NewSession populates all fields from the
-// Hello struct and the arguments passed to it.
-func TestNewSession(t *testing.T) {
-	hello := protocol.Hello{
-		Mode:    "pty",
-		Cols:    220,
-		Rows:    50,
-		Command: "bash",
-	}
+// TestNewLocalSession verifies that NewLocalSession populates the expected fields.
+func TestNewLocalSession(t *testing.T) {
+	cliServer, _ := newWSPair(t)
+	ls := NewLocalSession("sess-abc", cliServer, nil, newTestLogger())
 
-	sess := NewSession("sess-abc", "google", "sub-123", nil, hello, newTestLogger())
-
-	if sess.ID != "sess-abc" {
-		t.Errorf("ID = %q, want sess-abc", sess.ID)
+	if !ls.HasCLI() {
+		t.Error("HasCLI() = false, want true")
 	}
-	if sess.OwnerProvider != "google" {
-		t.Errorf("OwnerProvider = %q, want google", sess.OwnerProvider)
+	if ls.ViewerCount() != 0 {
+		t.Errorf("ViewerCount = %d, want 0", ls.ViewerCount())
 	}
-	if sess.OwnerSub != "sub-123" {
-		t.Errorf("OwnerSub = %q, want sub-123", sess.OwnerSub)
-	}
-	if sess.Mode != "pty" {
-		t.Errorf("Mode = %q, want pty", sess.Mode)
-	}
-	if sess.Cols != 220 {
-		t.Errorf("Cols = %d, want 220", sess.Cols)
-	}
-	if sess.Rows != 50 {
-		t.Errorf("Rows = %d, want 50", sess.Rows)
-	}
-	if sess.Command != "bash" {
-		t.Errorf("Command = %q, want bash", sess.Command)
-	}
-	if sess.viewers == nil {
-		t.Error("viewers map is nil, want initialised map")
-	}
-	if sess.closed {
+	if ls.closed {
 		t.Error("closed = true on new session, want false")
 	}
 }
 
-// TestSession_AddViewer checks that up to maxViewersPerSession viewers are
-// accepted and that the (maxViewersPerSession+1)th call returns false.
-// Nil conns are used because AddViewer only stores the pointer.
-func TestSession_AddViewer(t *testing.T) {
-	sess := NewSession("s1", "google", "u1", nil, protocol.Hello{}, newTestLogger())
+// TestNewViewerOnlyLocalSession verifies viewer-only sessions have no CLI.
+func TestNewViewerOnlyLocalSession(t *testing.T) {
+	ls := NewViewerOnlyLocalSession("sess-xyz", nil, newTestLogger())
 
-	for i := 0; i < maxViewersPerSession; i++ {
-		id := "viewer-" + string(rune('A'+i))
-		if !sess.AddViewer(id, nil) {
-			t.Fatalf("AddViewer %d returned false, want true", i+1)
-		}
+	if ls.HasCLI() {
+		t.Error("HasCLI() = true on viewer-only session, want false")
 	}
-	if sess.ViewerCount() != maxViewersPerSession {
-		t.Errorf("ViewerCount = %d, want %d", sess.ViewerCount(), maxViewersPerSession)
-	}
-
-	// One more should be rejected.
-	if sess.AddViewer("viewer-overflow", nil) {
-		t.Error("AddViewer returned true when at capacity, want false")
-	}
-	if sess.ViewerCount() != maxViewersPerSession {
-		t.Errorf("ViewerCount after overflow attempt = %d, want %d", sess.ViewerCount(), maxViewersPerSession)
+	if ls.ViewerCount() != 0 {
+		t.Errorf("ViewerCount = %d, want 0", ls.ViewerCount())
 	}
 }
 
-// TestSession_AddViewer_Closed verifies that AddViewer returns false once
-// the session is closed.
-func TestSession_AddViewer_Closed(t *testing.T) {
-	sess := NewSession("s2", "apple", "u2", nil, protocol.Hello{}, newTestLogger())
-	sess.Close()
+// TestLocalSession_AddViewer checks that up to maxViewersPerSession viewers are
+// accepted and that the (maxViewersPerSession+1)th call returns false.
+// Nil conns are used because AddViewer only stores the pointer.
+func TestLocalSession_AddViewer(t *testing.T) {
+	ls := NewLocalSession("s1", nil, nil, newTestLogger())
 
-	if sess.AddViewer("late-viewer", nil) {
+	for i := 0; i < maxViewersPerSession; i++ {
+		id := "viewer-" + string(rune('A'+i))
+		if !ls.AddViewer(id, nil) {
+			t.Fatalf("AddViewer %d returned false, want true", i+1)
+		}
+	}
+	if ls.ViewerCount() != maxViewersPerSession {
+		t.Errorf("ViewerCount = %d, want %d", ls.ViewerCount(), maxViewersPerSession)
+	}
+
+	// One more should be rejected.
+	if ls.AddViewer("viewer-overflow", nil) {
+		t.Error("AddViewer returned true when at capacity, want false")
+	}
+	if ls.ViewerCount() != maxViewersPerSession {
+		t.Errorf("ViewerCount after overflow attempt = %d, want %d", ls.ViewerCount(), maxViewersPerSession)
+	}
+}
+
+// TestLocalSession_AddViewer_Closed verifies that AddViewer returns false once
+// the session is closed.
+func TestLocalSession_AddViewer_Closed(t *testing.T) {
+	ls := NewLocalSession("s2", nil, nil, newTestLogger())
+	ls.Close()
+
+	if ls.AddViewer("late-viewer", nil) {
 		t.Error("AddViewer on closed session returned true, want false")
 	}
 }
 
-// TestSession_RemoveViewer confirms that removing an added viewer decrements
+// TestLocalSession_RemoveViewer confirms that removing an added viewer decrements
 // the count to zero.
-func TestSession_RemoveViewer(t *testing.T) {
-	sess := NewSession("s3", "microsoft", "u3", nil, protocol.Hello{}, newTestLogger())
+func TestLocalSession_RemoveViewer(t *testing.T) {
+	ls := NewLocalSession("s3", nil, nil, newTestLogger())
 
-	sess.AddViewer("v1", nil)
-	sess.AddViewer("v2", nil)
+	ls.AddViewer("v1", nil)
+	ls.AddViewer("v2", nil)
 
-	sess.RemoveViewer("v1")
-	if sess.ViewerCount() != 1 {
-		t.Errorf("ViewerCount after first remove = %d, want 1", sess.ViewerCount())
+	ls.RemoveViewer("v1")
+	if ls.ViewerCount() != 1 {
+		t.Errorf("ViewerCount after first remove = %d, want 1", ls.ViewerCount())
 	}
 
-	sess.RemoveViewer("v2")
-	if sess.ViewerCount() != 0 {
-		t.Errorf("ViewerCount after second remove = %d, want 0", sess.ViewerCount())
+	ls.RemoveViewer("v2")
+	if ls.ViewerCount() != 0 {
+		t.Errorf("ViewerCount after second remove = %d, want 0", ls.ViewerCount())
 	}
 }
 
-// TestSession_RemoveViewer_NonExistent confirms removing an unknown viewer ID
+// TestLocalSession_RemoveViewer_NonExistent confirms removing an unknown viewer ID
 // is a no-op and does not panic.
-func TestSession_RemoveViewer_NonExistent(t *testing.T) {
-	sess := NewSession("s4", "google", "u4", nil, protocol.Hello{}, newTestLogger())
+func TestLocalSession_RemoveViewer_NonExistent(t *testing.T) {
+	ls := NewLocalSession("s4", nil, nil, newTestLogger())
 	// Should not panic.
-	sess.RemoveViewer("nobody")
-	if sess.ViewerCount() != 0 {
-		t.Errorf("ViewerCount = %d after removing non-existent viewer, want 0", sess.ViewerCount())
+	ls.RemoveViewer("nobody")
+	if ls.ViewerCount() != 0 {
+		t.Errorf("ViewerCount = %d after removing non-existent viewer, want 0", ls.ViewerCount())
 	}
 }
 
-// TestSession_ViewerCount verifies the count reflects the number of added viewers.
-func TestSession_ViewerCount(t *testing.T) {
-	sess := NewSession("s5", "google", "u5", nil, protocol.Hello{}, newTestLogger())
+// TestLocalSession_ViewerCount verifies the count reflects the number of added viewers.
+func TestLocalSession_ViewerCount(t *testing.T) {
+	ls := NewLocalSession("s5", nil, nil, newTestLogger())
 
-	if sess.ViewerCount() != 0 {
-		t.Errorf("initial ViewerCount = %d, want 0", sess.ViewerCount())
+	if ls.ViewerCount() != 0 {
+		t.Errorf("initial ViewerCount = %d, want 0", ls.ViewerCount())
 	}
 
-	sess.AddViewer("v1", nil)
-	sess.AddViewer("v2", nil)
-	sess.AddViewer("v3", nil)
+	ls.AddViewer("v1", nil)
+	ls.AddViewer("v2", nil)
+	ls.AddViewer("v3", nil)
 
-	if sess.ViewerCount() != 3 {
-		t.Errorf("ViewerCount = %d, want 3", sess.ViewerCount())
+	if ls.ViewerCount() != 3 {
+		t.Errorf("ViewerCount = %d, want 3", ls.ViewerCount())
 	}
 }
 
-// TestSession_BroadcastToViewers creates a real WebSocket pair, registers the
-// server-side conn as a viewer, broadcasts TypeStdout, and asserts the client
-// receives the correct framed message.
-func TestSession_BroadcastToViewers(t *testing.T) {
+// TestLocalSession_BroadcastToLocalViewers creates a real WebSocket pair, registers
+// the server-side conn as a viewer, broadcasts pre-encoded data, and asserts the
+// client receives the correct framed message.
+func TestLocalSession_BroadcastToLocalViewers(t *testing.T) {
 	viewerServer, viewerClient := newWSPair(t)
 
-	sess := NewSession("s6", "google", "u6", nil, protocol.Hello{}, newTestLogger())
-	sess.AddViewer("v1", viewerServer)
+	ls := NewLocalSession("s6", nil, nil, newTestLogger())
+	ls.AddViewer("v1", viewerServer)
 
 	payload := []byte("hello world")
+	encoded, err := protocol.Encode(protocol.TypeStdout, payload)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
 	ctx := context.Background()
-	sess.BroadcastToViewers(ctx, protocol.TypeStdout, payload)
+	ls.BroadcastToLocalViewers(ctx, encoded)
 
 	msg := readMessage(t, viewerClient)
 
@@ -235,19 +226,23 @@ func TestSession_BroadcastToViewers(t *testing.T) {
 	}
 }
 
-// TestSession_BroadcastToViewers_Multiple verifies all registered viewers
+// TestLocalSession_BroadcastToLocalViewers_Multiple verifies all registered viewers
 // receive the broadcast.
-func TestSession_BroadcastToViewers_Multiple(t *testing.T) {
+func TestLocalSession_BroadcastToLocalViewers_Multiple(t *testing.T) {
 	viewerServer1, viewerClient1 := newWSPair(t)
 	viewerServer2, viewerClient2 := newWSPair(t)
 
-	sess := NewSession("s7", "google", "u7", nil, protocol.Hello{}, newTestLogger())
-	sess.AddViewer("v1", viewerServer1)
-	sess.AddViewer("v2", viewerServer2)
+	ls := NewLocalSession("s7", nil, nil, newTestLogger())
+	ls.AddViewer("v1", viewerServer1)
+	ls.AddViewer("v2", viewerServer2)
 
 	payload := []byte("broadcast data")
+	encoded, err := protocol.Encode(protocol.TypeStdout, payload)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
 	ctx := context.Background()
-	sess.BroadcastToViewers(ctx, protocol.TypeStdout, payload)
+	ls.BroadcastToLocalViewers(ctx, encoded)
 
 	for _, client := range []*websocket.Conn{viewerClient1, viewerClient2} {
 		msg := readMessage(t, client)
@@ -260,17 +255,21 @@ func TestSession_BroadcastToViewers_Multiple(t *testing.T) {
 	}
 }
 
-// TestSession_SendToCLI creates a real WebSocket pair for the CLI connection,
-// calls SendToCLI with TypeStdin, and verifies the CLI client receives the
+// TestLocalSession_SendToCLI creates a real WebSocket pair for the CLI connection,
+// calls SendToCLI with pre-encoded data, and verifies the CLI client receives the
 // correctly encoded message.
-func TestSession_SendToCLI(t *testing.T) {
+func TestLocalSession_SendToCLI(t *testing.T) {
 	cliServer, cliClient := newWSPair(t)
 
-	sess := NewSession("s8", "google", "u8", cliServer, protocol.Hello{}, newTestLogger())
+	ls := NewLocalSession("s8", cliServer, nil, newTestLogger())
 
 	payload := []byte("keystrokes")
+	encoded, err := protocol.Encode(protocol.TypeStdin, payload)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
 	ctx := context.Background()
-	if err := sess.SendToCLI(ctx, protocol.TypeStdin, payload); err != nil {
+	if err := ls.SendToCLI(ctx, encoded); err != nil {
 		t.Fatalf("SendToCLI error: %v", err)
 	}
 
@@ -287,16 +286,16 @@ func TestSession_SendToCLI(t *testing.T) {
 	}
 }
 
-// TestSession_NotifyViewerCount adds one viewer, calls NotifyViewerCount, and
+// TestLocalSession_NotifyViewerCount adds one viewer, calls NotifyViewerCount, and
 // verifies the CLI receives a TypeViewerCount message with Count=1.
-func TestSession_NotifyViewerCount(t *testing.T) {
+func TestLocalSession_NotifyViewerCount(t *testing.T) {
 	cliServer, cliClient := newWSPair(t)
 
-	sess := NewSession("s9", "google", "u9", cliServer, protocol.Hello{}, newTestLogger())
-	sess.AddViewer("v1", nil)
+	ls := NewLocalSession("s9", cliServer, nil, newTestLogger())
+	ls.AddViewer("v1", nil)
 
 	ctx := context.Background()
-	sess.NotifyViewerCount(ctx)
+	ls.NotifyViewerCount(ctx)
 
 	msg := readMessage(t, cliClient)
 
@@ -316,15 +315,15 @@ func TestSession_NotifyViewerCount(t *testing.T) {
 	}
 }
 
-// TestSession_NotifyViewerCount_Zero verifies that NotifyViewerCount correctly
+// TestLocalSession_NotifyViewerCount_Zero verifies that NotifyViewerCount correctly
 // reports zero when no viewers are attached.
-func TestSession_NotifyViewerCount_Zero(t *testing.T) {
+func TestLocalSession_NotifyViewerCount_Zero(t *testing.T) {
 	cliServer, cliClient := newWSPair(t)
 
-	sess := NewSession("s10", "google", "u10", cliServer, protocol.Hello{}, newTestLogger())
+	ls := NewLocalSession("s10", cliServer, nil, newTestLogger())
 
 	ctx := context.Background()
-	sess.NotifyViewerCount(ctx)
+	ls.NotifyViewerCount(ctx)
 
 	msg := readMessage(t, cliClient)
 
@@ -340,16 +339,16 @@ func TestSession_NotifyViewerCount_Zero(t *testing.T) {
 	}
 }
 
-// TestSession_Close_Idempotent verifies that calling Close twice does not panic
+// TestLocalSession_Close_Idempotent verifies that calling Close twice does not panic
 // and that viewers receive a TypeEnd message on the first Close.
-func TestSession_Close_Idempotent(t *testing.T) {
+func TestLocalSession_Close_Idempotent(t *testing.T) {
 	viewerServer, viewerClient := newWSPair(t)
 
-	sess := NewSession("s11", "google", "u11", nil, protocol.Hello{}, newTestLogger())
-	sess.AddViewer("v1", viewerServer)
+	ls := NewLocalSession("s11", nil, nil, newTestLogger())
+	ls.AddViewer("v1", viewerServer)
 
 	// First close — should send TypeEnd to viewers.
-	sess.Close()
+	ls.Close()
 
 	// Read the TypeEnd frame sent to the viewer.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -368,32 +367,32 @@ func TestSession_Close_Idempotent(t *testing.T) {
 	// since Close() calls conn.Close after writing the end message.
 
 	// Second close — must not panic.
-	sess.Close()
+	ls.Close()
 
 	// After Close the session should report zero viewers.
-	if sess.ViewerCount() != 0 {
-		t.Errorf("ViewerCount after Close = %d, want 0", sess.ViewerCount())
+	if ls.ViewerCount() != 0 {
+		t.Errorf("ViewerCount after Close = %d, want 0", ls.ViewerCount())
 	}
 }
 
-// TestSession_Close_SetsClosedFlag confirms that after Close() the session
+// TestLocalSession_Close_SetsClosedFlag confirms that after Close() the session
 // rejects new viewers via AddViewer.
-func TestSession_Close_SetsClosedFlag(t *testing.T) {
-	sess := NewSession("s12", "google", "u12", nil, protocol.Hello{}, newTestLogger())
-	sess.Close()
+func TestLocalSession_Close_SetsClosedFlag(t *testing.T) {
+	ls := NewLocalSession("s12", nil, nil, newTestLogger())
+	ls.Close()
 
-	if !sess.closed {
+	if !ls.closed {
 		t.Error("closed flag = false after Close(), want true")
 	}
-	if sess.AddViewer("late", nil) {
+	if ls.AddViewer("late", nil) {
 		t.Error("AddViewer returned true on a closed session, want false")
 	}
 }
 
-// TestSession_ConcurrentAddRemove exercises AddViewer / RemoveViewer /
+// TestLocalSession_ConcurrentAddRemove exercises AddViewer / RemoveViewer /
 // ViewerCount under concurrent access to detect data races (run with -race).
-func TestSession_ConcurrentAddRemove(t *testing.T) {
-	sess := NewSession("s13", "google", "u13", nil, protocol.Hello{}, newTestLogger())
+func TestLocalSession_ConcurrentAddRemove(t *testing.T) {
+	ls := NewLocalSession("s13", nil, nil, newTestLogger())
 
 	const goroutines = 20
 	var wg sync.WaitGroup
@@ -403,10 +402,10 @@ func TestSession_ConcurrentAddRemove(t *testing.T) {
 		go func(n int) {
 			defer wg.Done()
 			id := "viewer-concurrent-" + string(rune('A'+n%26))
-			sess.AddViewer(id, nil)
-			_ = sess.ViewerCount()
-			sess.RemoveViewer(id)
-			_ = sess.ViewerCount()
+			ls.AddViewer(id, nil)
+			_ = ls.ViewerCount()
+			ls.RemoveViewer(id)
+			_ = ls.ViewerCount()
 		}(i)
 	}
 

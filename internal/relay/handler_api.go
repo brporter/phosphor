@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-type sessionInfo struct {
+type sessionListItem struct {
 	ID      string `json:"id"`
 	Mode    string `json:"mode"`
 	Cols    int    `json:"cols"`
@@ -22,16 +22,25 @@ func (s *Server) HandleListSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessions := s.hub.ListForOwner(provider, sub)
-	infos := make([]sessionInfo, 0, len(sessions))
-	for _, sess := range sessions {
-		infos = append(infos, sessionInfo{
-			ID:      sess.ID,
-			Mode:    sess.Mode,
-			Cols:    sess.Cols,
-			Rows:    sess.Rows,
-			Command: sess.Command,
-			Viewers: sess.ViewerCount(),
+	sessions, err := s.hub.ListForOwner(r.Context(), provider, sub)
+	if err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	infos := make([]sessionListItem, 0, len(sessions))
+	for _, info := range sessions {
+		viewers := 0
+		if ls, ok := s.hub.GetLocal(info.ID); ok {
+			viewers = ls.ViewerCount()
+		}
+		infos = append(infos, sessionListItem{
+			ID:      info.ID,
+			Mode:    info.Mode,
+			Cols:    info.Cols,
+			Rows:    info.Rows,
+			Command: info.Command,
+			Viewers: viewers,
 		})
 	}
 

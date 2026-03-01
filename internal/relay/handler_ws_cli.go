@@ -51,13 +51,16 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var session *Session
 	var sessionID string
 
 	if hello.SessionID != "" && hello.ReconnectToken != "" {
 		// Reconnect path
 		sessionID = hello.SessionID
-		existing, ok := s.hub.Get(sessionID)
+		existing, ok, err := s.hub.Get(ctx, sessionID)
+		if err != nil {
+			sendError(ctx, conn, "internal_error", "failed to look up session")
+			return
+		}
 		if !ok {
 			sendError(ctx, conn, "session_not_found", "session does not exist or has expired")
 			return
@@ -70,17 +73,21 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 			sendError(ctx, conn, "invalid_token", "invalid reconnect token")
 			return
 		}
-		if !s.hub.Reconnect(sessionID, conn) {
+		if !existing.Disconnected {
 			sendError(ctx, conn, "reconnect_failed", "session is not in a disconnected state")
 			return
 		}
-		session = existing
-		session.RotateReconnectToken()
+
+		newToken := generateToken()
+		if err := s.hub.Reconnect(ctx, sessionID, conn, newToken); err != nil {
+			sendError(ctx, conn, "reconnect_failed", "reconnect failed")
+			return
+		}
 
 		welcome := protocol.Welcome{
 			SessionID:      sessionID,
 			ViewURL:        s.baseURL + "/session/" + sessionID,
-			ReconnectToken: session.ReconnectToken,
+			ReconnectToken: newToken,
 		}
 		welcomeData, _ := protocol.Encode(protocol.TypeWelcome, welcome)
 		conn.Write(ctx, websocket.MessageBinary, welcomeData)
@@ -89,19 +96,33 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// New connection path
 		sessionID, _ = gonanoid.New(12)
-		session = NewSession(sessionID, ownerProvider, ownerSub, conn, hello, s.logger)
-		s.hub.Register(session)
+		token := generateToken()
+		info := SessionInfo{
+			ID:             sessionID,
+			OwnerProvider:  ownerProvider,
+			OwnerSub:       ownerSub,
+			Mode:           hello.Mode,
+			Cols:           hello.Cols,
+			Rows:           hello.Rows,
+			Command:        hello.Command,
+			ReconnectToken: token,
+		}
+
+		if _, err := s.hub.Register(ctx, info, conn); err != nil {
+			sendError(ctx, conn, "internal_error", "failed to register session")
+			return
+		}
 
 		welcome := protocol.Welcome{
 			SessionID:      sessionID,
 			ViewURL:        s.baseURL + "/session/" + sessionID,
-			ReconnectToken: session.ReconnectToken,
+			ReconnectToken: token,
 		}
 		welcomeData, _ := protocol.Encode(protocol.TypeWelcome, welcome)
 		conn.Write(ctx, websocket.MessageBinary, welcomeData)
 	}
 
-	defer s.hub.Disconnect(sessionID, 60*time.Second)
+	defer s.hub.Disconnect(ctx, sessionID, 60*time.Second)
 
 	// Read loop: forward CLI output to viewers
 	for {
@@ -118,13 +139,18 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		switch msgType {
 		case protocol.TypeStdout:
-			session.BroadcastToViewers(ctx, protocol.TypeStdout, payload)
+			encoded, err := protocol.Encode(protocol.TypeStdout, payload)
+			if err == nil {
+				s.hub.BroadcastOutput(ctx, sessionID, encoded)
+			}
 		case protocol.TypeResize:
 			var sz protocol.Resize
 			if err := protocol.DecodeJSON(payload, &sz); err == nil {
-				session.Cols = sz.Cols
-				session.Rows = sz.Rows
-				session.BroadcastToViewers(ctx, protocol.TypeResize, sz)
+				s.hub.store.UpdateDimensions(ctx, sessionID, sz.Cols, sz.Rows)
+				encoded, err := protocol.Encode(protocol.TypeResize, sz)
+				if err == nil {
+					s.hub.BroadcastOutput(ctx, sessionID, encoded)
+				}
 			}
 		case protocol.TypePong:
 			// heartbeat response, ignore

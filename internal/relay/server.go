@@ -3,7 +3,6 @@ package relay
 import (
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/brporter/phosphor/internal/auth"
 )
@@ -15,12 +14,12 @@ type Server struct {
 	baseURL      string
 	verifier     *auth.Verifier
 	devMode      bool
-	authSessions *AuthSessionStore
+	authSessions AuthSessionStoreI
 }
 
 // NewServer creates a new relay server.
-func NewServer(hub *Hub, logger *slog.Logger, baseURL string, verifier *auth.Verifier, devMode bool) *Server {
-	return &Server{hub: hub, logger: logger, baseURL: baseURL, verifier: verifier, devMode: devMode, authSessions: NewAuthSessionStore(5 * time.Minute)}
+func NewServer(hub *Hub, logger *slog.Logger, baseURL string, verifier *auth.Verifier, devMode bool, authSessions AuthSessionStoreI) *Server {
+	return &Server{hub: hub, logger: logger, baseURL: baseURL, verifier: verifier, devMode: devMode, authSessions: authSessions}
 }
 
 // Handler returns the HTTP handler with all routes.

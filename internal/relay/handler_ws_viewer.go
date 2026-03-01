@@ -53,42 +53,54 @@ func (s *Server) HandleViewerWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Look up session
-	session, ok := s.hub.Get(join.SessionID)
+	// Look up session metadata
+	info, ok, err := s.hub.Get(ctx, join.SessionID)
+	if err != nil {
+		sendError(ctx, conn, "internal_error", "failed to look up session")
+		return
+	}
 	if !ok {
 		sendError(ctx, conn, "session_not_found", "session not found")
 		return
 	}
 
 	// Verify ownership: viewer must be the session owner
-	if viewerProvider != session.OwnerProvider || viewerSub != session.OwnerSub {
+	if viewerProvider != info.OwnerProvider || viewerSub != info.OwnerSub {
 		sendError(ctx, conn, "forbidden", "you do not own this session")
+		return
+	}
+
+	// Get or create local session for this viewer
+	ls, err := s.hub.GetOrCreateViewerLocal(ctx, join.SessionID)
+	if err != nil {
+		sendError(ctx, conn, "internal_error", "failed to set up viewer session")
 		return
 	}
 
 	// Add viewer
 	viewerID, _ := gonanoid.New(8)
-	if !session.AddViewer(viewerID, conn) {
+	if !ls.AddViewer(viewerID, conn) {
 		sendError(ctx, conn, "session_full", "maximum viewers reached")
 		return
 	}
 	defer func() {
-		session.RemoveViewer(viewerID)
-		session.NotifyViewerCount(ctx)
+		ls.RemoveViewer(viewerID)
+		ls.NotifyViewerCount(ctx)
+		s.hub.CleanupViewerLocal(join.SessionID)
 	}()
 
 	// Send Joined
 	joined := protocol.Joined{
-		Mode:    session.Mode,
-		Cols:    session.Cols,
-		Rows:    session.Rows,
-		Command: session.Command,
+		Mode:    info.Mode,
+		Cols:    info.Cols,
+		Rows:    info.Rows,
+		Command: info.Command,
 	}
 	joinedData, _ := protocol.Encode(protocol.TypeJoined, joined)
 	conn.Write(ctx, websocket.MessageBinary, joinedData)
 
 	// Notify CLI of new viewer count
-	session.NotifyViewerCount(ctx)
+	ls.NotifyViewerCount(ctx)
 
 	s.logger.Info("viewer joined", "session", sessionID, "viewer", viewerID)
 
@@ -107,12 +119,21 @@ func (s *Server) HandleViewerWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		switch msgType {
 		case protocol.TypeStdin:
-			if session.Mode == "pty" {
-				session.SendToCLI(ctx, protocol.TypeStdin, payload)
+			if info.Mode == "pty" {
+				encoded, err := protocol.Encode(protocol.TypeStdin, payload)
+				if err == nil {
+					s.hub.SendInput(ctx, join.SessionID, encoded)
+				}
 			}
 			// In pipe mode, stdin from viewers is silently dropped
 		case protocol.TypeResize:
-			session.SendToCLI(ctx, protocol.TypeResize, payload)
+			var sz protocol.Resize
+			if err := protocol.DecodeJSON(payload, &sz); err == nil {
+				encoded, err := protocol.Encode(protocol.TypeResize, sz)
+				if err == nil {
+					s.hub.SendInput(ctx, join.SessionID, encoded)
+				}
+			}
 		case protocol.TypePong:
 			// heartbeat response
 		}

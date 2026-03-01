@@ -1,15 +1,20 @@
 package relay
 
 import (
+	"context"
 	"testing"
 	"time"
 )
 
 func TestAuthSessionStore_CreateAndGet(t *testing.T) {
-	store := NewAuthSessionStore(5 * time.Minute)
+	store := NewMemoryAuthSessionStore(5 * time.Minute)
 	defer store.Stop()
+	ctx := context.Background()
 
-	sess := store.Create("google", "test-verifier", "cli")
+	sess, err := store.Create(ctx, "google", "test-verifier", "cli")
+	if err != nil {
+		t.Fatalf("Create error: %v", err)
+	}
 	if sess.ID == "" {
 		t.Fatal("session ID is empty")
 	}
@@ -20,7 +25,10 @@ func TestAuthSessionStore_CreateAndGet(t *testing.T) {
 		t.Errorf("code_verifier = %q, want test-verifier", sess.CodeVerifier)
 	}
 
-	got, ok := store.Get(sess.ID)
+	got, ok, getErr := store.Get(ctx, sess.ID)
+	if getErr != nil {
+		t.Fatalf("Get error: %v", getErr)
+	}
 	if !ok {
 		t.Fatal("session not found")
 	}
@@ -30,13 +38,20 @@ func TestAuthSessionStore_CreateAndGet(t *testing.T) {
 }
 
 func TestAuthSessionStore_Complete(t *testing.T) {
-	store := NewAuthSessionStore(5 * time.Minute)
+	store := NewMemoryAuthSessionStore(5 * time.Minute)
 	defer store.Stop()
+	ctx := context.Background()
 
-	sess := store.Create("apple", "verifier", "cli")
-	store.Complete(sess.ID, "the-id-token")
+	sess, err := store.Create(ctx, "apple", "verifier", "cli")
+	if err != nil {
+		t.Fatalf("Create error: %v", err)
+	}
+	store.Complete(ctx, sess.ID, "the-id-token")
 
-	got, ok := store.Get(sess.ID)
+	got, ok, getErr := store.Get(ctx, sess.ID)
+	if getErr != nil {
+		t.Fatalf("Get error: %v", getErr)
+	}
 	if !ok {
 		t.Fatal("session not found after complete")
 	}
@@ -46,13 +61,20 @@ func TestAuthSessionStore_Complete(t *testing.T) {
 }
 
 func TestAuthSessionStore_Consume(t *testing.T) {
-	store := NewAuthSessionStore(5 * time.Minute)
+	store := NewMemoryAuthSessionStore(5 * time.Minute)
 	defer store.Stop()
+	ctx := context.Background()
 
-	sess := store.Create("microsoft", "verifier", "cli")
-	store.Complete(sess.ID, "token-value")
+	sess, err := store.Create(ctx, "microsoft", "verifier", "cli")
+	if err != nil {
+		t.Fatalf("Create error: %v", err)
+	}
+	store.Complete(ctx, sess.ID, "token-value")
 
-	token, ok := store.Consume(sess.ID)
+	token, ok, consumeErr := store.Consume(ctx, sess.ID)
+	if consumeErr != nil {
+		t.Fatalf("Consume error: %v", consumeErr)
+	}
 	if !ok {
 		t.Fatal("consume returned false")
 	}
@@ -61,20 +83,24 @@ func TestAuthSessionStore_Consume(t *testing.T) {
 	}
 
 	// Second consume should fail (single-use)
-	_, ok = store.Consume(sess.ID)
+	_, ok, _ = store.Consume(ctx, sess.ID)
 	if ok {
 		t.Error("second consume should return false")
 	}
 }
 
 func TestAuthSessionStore_Expiry(t *testing.T) {
-	store := NewAuthSessionStore(50 * time.Millisecond)
+	store := NewMemoryAuthSessionStore(50 * time.Millisecond)
 	defer store.Stop()
+	ctx := context.Background()
 
-	sess := store.Create("google", "verifier", "cli")
+	sess, err := store.Create(ctx, "google", "verifier", "cli")
+	if err != nil {
+		t.Fatalf("Create error: %v", err)
+	}
 	time.Sleep(100 * time.Millisecond)
 
-	_, ok := store.Get(sess.ID)
+	_, ok, _ := store.Get(ctx, sess.ID)
 	if ok {
 		t.Error("session should have expired")
 	}

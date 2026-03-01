@@ -1,17 +1,21 @@
 package relay
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/coder/websocket"
+	"time"
 )
 
 func TestHandleListSessions_Empty(t *testing.T) {
-	s := &Server{hub: NewHub(slog.Default()), logger: slog.Default(), devMode: true}
+	store := NewMemorySessionStore()
+	hub := NewHub(store, nil, "test", slog.Default())
+	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
+	t.Cleanup(authSessions.Stop)
+	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions}
 
 	r := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	w := httptest.NewRecorder()
@@ -23,7 +27,7 @@ func TestHandleListSessions_Empty(t *testing.T) {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
-	var result []sessionInfo
+	var result []sessionListItem
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -33,10 +37,15 @@ func TestHandleListSessions_Empty(t *testing.T) {
 }
 
 func TestHandleListSessions_WithSessions(t *testing.T) {
-	hub := NewHub(slog.Default())
-	s := &Server{hub: hub, logger: slog.Default(), devMode: true}
+	store := NewMemorySessionStore()
+	hub := NewHub(store, nil, "test", slog.Default())
+	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
+	t.Cleanup(authSessions.Stop)
+	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions}
 
-	sess1 := &Session{
+	ctx := context.Background()
+
+	info1 := SessionInfo{
 		ID:            "s1",
 		OwnerProvider: "dev",
 		OwnerSub:      "anonymous",
@@ -44,10 +53,8 @@ func TestHandleListSessions_WithSessions(t *testing.T) {
 		Cols:          80,
 		Rows:          24,
 		Command:       "bash",
-		viewers:       make(map[string]*websocket.Conn),
-		logger:        slog.Default(),
 	}
-	sess2 := &Session{
+	info2 := SessionInfo{
 		ID:            "s2",
 		OwnerProvider: "dev",
 		OwnerSub:      "anonymous",
@@ -55,11 +62,9 @@ func TestHandleListSessions_WithSessions(t *testing.T) {
 		Cols:          120,
 		Rows:          40,
 		Command:       "zsh",
-		viewers:       make(map[string]*websocket.Conn),
-		logger:        slog.Default(),
 	}
-	hub.Register(sess1)
-	hub.Register(sess2)
+	hub.Register(ctx, info1, nil)
+	hub.Register(ctx, info2, nil)
 
 	r := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	w := httptest.NewRecorder()
@@ -71,7 +76,7 @@ func TestHandleListSessions_WithSessions(t *testing.T) {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
-	var result []sessionInfo
+	var result []sessionListItem
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -80,51 +85,53 @@ func TestHandleListSessions_WithSessions(t *testing.T) {
 	}
 
 	// Build a map for order-independent assertions.
-	byID := make(map[string]sessionInfo)
+	byID := make(map[string]sessionListItem)
 	for _, info := range result {
 		byID[info.ID] = info
 	}
 
-	info1, ok := byID["s1"]
+	item1, ok := byID["s1"]
 	if !ok {
 		t.Fatal("session s1 not found in response")
 	}
-	if info1.Mode != "pty" {
-		t.Errorf("s1 Mode = %q, want %q", info1.Mode, "pty")
+	if item1.Mode != "pty" {
+		t.Errorf("s1 Mode = %q, want %q", item1.Mode, "pty")
 	}
-	if info1.Cols != 80 {
-		t.Errorf("s1 Cols = %d, want 80", info1.Cols)
+	if item1.Cols != 80 {
+		t.Errorf("s1 Cols = %d, want 80", item1.Cols)
 	}
-	if info1.Rows != 24 {
-		t.Errorf("s1 Rows = %d, want 24", info1.Rows)
+	if item1.Rows != 24 {
+		t.Errorf("s1 Rows = %d, want 24", item1.Rows)
 	}
-	if info1.Command != "bash" {
-		t.Errorf("s1 Command = %q, want %q", info1.Command, "bash")
+	if item1.Command != "bash" {
+		t.Errorf("s1 Command = %q, want %q", item1.Command, "bash")
 	}
-	if info1.Viewers != 0 {
-		t.Errorf("s1 Viewers = %d, want 0", info1.Viewers)
+	if item1.Viewers != 0 {
+		t.Errorf("s1 Viewers = %d, want 0", item1.Viewers)
 	}
 
-	info2, ok := byID["s2"]
+	item2, ok := byID["s2"]
 	if !ok {
 		t.Fatal("session s2 not found in response")
 	}
-	if info2.Mode != "pipe" {
-		t.Errorf("s2 Mode = %q, want %q", info2.Mode, "pipe")
+	if item2.Mode != "pipe" {
+		t.Errorf("s2 Mode = %q, want %q", item2.Mode, "pipe")
 	}
-	if info2.Cols != 120 {
-		t.Errorf("s2 Cols = %d, want 120", info2.Cols)
+	if item2.Cols != 120 {
+		t.Errorf("s2 Cols = %d, want 120", item2.Cols)
 	}
-	if info2.Rows != 40 {
-		t.Errorf("s2 Rows = %d, want 40", info2.Rows)
+	if item2.Rows != 40 {
+		t.Errorf("s2 Rows = %d, want 40", item2.Rows)
 	}
-	if info2.Command != "zsh" {
-		t.Errorf("s2 Command = %q, want %q", info2.Command, "zsh")
+	if item2.Command != "zsh" {
+		t.Errorf("s2 Command = %q, want %q", item2.Command, "zsh")
 	}
 }
 
 func TestHandleListSessions_Unauthorized(t *testing.T) {
-	s := &Server{hub: NewHub(slog.Default()), logger: slog.Default(), devMode: false}
+	store := NewMemorySessionStore()
+	hub := NewHub(store, nil, "test", slog.Default())
+	s := &Server{hub: hub, logger: slog.Default(), devMode: false}
 
 	r := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	w := httptest.NewRecorder()

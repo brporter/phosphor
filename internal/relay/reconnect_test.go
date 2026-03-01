@@ -13,134 +13,132 @@ import (
 )
 
 func TestSession_ReconnectToken_Generated(t *testing.T) {
-	s1 := NewSession("s1", "google", "u1", nil, protocol.Hello{}, newTestLogger())
-	s2 := NewSession("s2", "google", "u2", nil, protocol.Hello{}, newTestLogger())
+	// generateToken is used by the handler to assign reconnect tokens.
+	t1 := generateToken()
+	t2 := generateToken()
 
-	if s1.ReconnectToken == "" {
-		t.Error("ReconnectToken is empty on new session")
+	if t1 == "" {
+		t.Error("generateToken returned empty string")
 	}
-	if s2.ReconnectToken == "" {
-		t.Error("ReconnectToken is empty on new session")
+	if t2 == "" {
+		t.Error("generateToken returned empty string")
 	}
-	if s1.ReconnectToken == s2.ReconnectToken {
-		t.Error("two sessions have the same ReconnectToken")
+	if t1 == t2 {
+		t.Error("two calls to generateToken returned the same value")
 	}
-}
-
-func TestSession_RotateReconnectToken(t *testing.T) {
-	sess := NewSession("s1", "google", "u1", nil, protocol.Hello{}, newTestLogger())
-	old := sess.ReconnectToken
-
-	sess.RotateReconnectToken()
-
-	if sess.ReconnectToken == old {
-		t.Error("RotateReconnectToken did not change the token")
-	}
-	if sess.ReconnectToken == "" {
-		t.Error("RotateReconnectToken produced empty token")
-	}
-}
-
-func TestSession_MarkDisconnected_ReplaceCLI(t *testing.T) {
-	cliServer, viewerClient := newWSPair(t)
-	sess := NewSession("s1", "google", "u1", cliServer, protocol.Hello{}, newTestLogger())
-
-	// Add a viewer so we can verify broadcasts
-	viewerServer, _ := newWSPair(t)
-	sess.AddViewer("v1", viewerServer)
-
-	// Mark disconnected
-	sess.MarkDisconnected()
-
-	if !sess.IsDisconnected() {
-		t.Error("IsDisconnected() = false after MarkDisconnected()")
-	}
-
-	// Replace CLI with a new connection
-	newCLIServer, _ := newWSPair(t)
-	sess.ReplaceCLI(newCLIServer)
-
-	if sess.IsDisconnected() {
-		t.Error("IsDisconnected() = true after ReplaceCLI()")
-	}
-
-	_ = viewerClient // keep reference alive
 }
 
 func TestHub_Disconnect_GracePeriod(t *testing.T) {
-	h := NewHub(slog.Default())
-	sess := NewSession("s1", "google", "u1", nil, protocol.Hello{}, newTestLogger())
-	h.Register(sess)
+	store := NewMemorySessionStore()
+	h := NewHub(store, nil, "test", slog.Default())
+	store.SetExpiryCallback(func(ctx context.Context, id string) {
+		h.Unregister(ctx, id)
+	})
+	ctx := context.Background()
+
+	info := SessionInfo{
+		ID:             "s1",
+		OwnerProvider:  "google",
+		OwnerSub:       "u1",
+		ReconnectToken: generateToken(),
+	}
+	h.Register(ctx, info, nil)
 
 	// Use a short grace period for testing
-	h.Disconnect("s1", 200*time.Millisecond)
+	h.Disconnect(ctx, "s1", 200*time.Millisecond)
 
 	// Session should still be in hub immediately
-	if _, ok := h.Get("s1"); !ok {
+	got, ok, _ := h.Get(ctx, "s1")
+	if !ok {
 		t.Fatal("session removed immediately, should be in grace period")
 	}
-	if !sess.IsDisconnected() {
+	if !got.Disconnected {
 		t.Error("session not marked as disconnected")
 	}
 
 	// Wait for grace period to expire
 	time.Sleep(400 * time.Millisecond)
 
-	if _, ok := h.Get("s1"); ok {
+	_, ok, _ = h.Get(ctx, "s1")
+	if ok {
 		t.Error("session still in hub after grace period expired")
 	}
 }
 
 func TestHub_Disconnect_ThenReconnect(t *testing.T) {
-	h := NewHub(slog.Default())
+	store := NewMemorySessionStore()
+	h := NewHub(store, nil, "test", slog.Default())
+	store.SetExpiryCallback(func(ctx context.Context, id string) {
+		h.Unregister(ctx, id)
+	})
+	ctx := context.Background()
+
 	cliServer, _ := newWSPair(t)
-	sess := NewSession("s1", "google", "u1", cliServer, protocol.Hello{}, newTestLogger())
-	h.Register(sess)
+	info := SessionInfo{
+		ID:             "s1",
+		OwnerProvider:  "google",
+		OwnerSub:       "u1",
+		ReconnectToken: generateToken(),
+	}
+	h.Register(ctx, info, cliServer)
 
-	h.Disconnect("s1", 5*time.Second) // long grace so it doesn't expire during test
+	h.Disconnect(ctx, "s1", 5*time.Second) // long grace so it doesn't expire during test
 
-	if !sess.IsDisconnected() {
+	got, ok, _ := h.Get(ctx, "s1")
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if !got.Disconnected {
 		t.Fatal("session not marked as disconnected")
 	}
 
 	// Reconnect with a new connection
 	newCLIServer, _ := newWSPair(t)
-	ok := h.Reconnect("s1", newCLIServer)
+	newToken := generateToken()
+	err := h.Reconnect(ctx, "s1", newCLIServer, newToken)
+	if err != nil {
+		t.Fatalf("Reconnect error: %v", err)
+	}
+
+	got, ok, _ = h.Get(ctx, "s1")
 	if !ok {
-		t.Fatal("Reconnect returned false")
-	}
-
-	if sess.IsDisconnected() {
-		t.Error("session still marked as disconnected after Reconnect")
-	}
-
-	// Session should still be in hub
-	if _, ok := h.Get("s1"); !ok {
 		t.Error("session removed from hub after reconnect")
+	}
+	if got.Disconnected {
+		t.Error("session still marked as disconnected after Reconnect")
 	}
 }
 
 func TestHub_Disconnect_Expired(t *testing.T) {
-	h := NewHub(slog.Default())
-	sess := NewSession("s1", "google", "u1", nil, protocol.Hello{}, newTestLogger())
-	h.Register(sess)
+	store := NewMemorySessionStore()
+	h := NewHub(store, nil, "test", slog.Default())
+	store.SetExpiryCallback(func(ctx context.Context, id string) {
+		h.Unregister(ctx, id)
+	})
+	ctx := context.Background()
 
-	h.Disconnect("s1", 100*time.Millisecond)
+	info := SessionInfo{
+		ID:             "s1",
+		OwnerProvider:  "google",
+		OwnerSub:       "u1",
+		ReconnectToken: generateToken(),
+	}
+	h.Register(ctx, info, nil)
+
+	h.Disconnect(ctx, "s1", 100*time.Millisecond)
 
 	// Wait for grace period to expire
 	time.Sleep(250 * time.Millisecond)
 
 	// Session should be gone
-	if _, ok := h.Get("s1"); ok {
+	_, ok, _ := h.Get(ctx, "s1")
+	if ok {
 		t.Fatal("session still in hub after grace period")
 	}
 
-	// Reconnect should fail
-	newConn, _ := newWSPair(t)
-	ok := h.Reconnect("s1", newConn)
-	if ok {
-		t.Error("Reconnect succeeded on expired session")
-	}
+	// Reconnect should succeed at the hub level (creates new local session),
+	// but there's no session in the store anymore, so the token check
+	// happens at the handler level.
 }
 
 // connectCLI establishes a CLI session and returns the conn, session ID, and reconnect token.
@@ -179,7 +177,7 @@ func TestHandleCLIWebSocket_Reconnect_Success(t *testing.T) {
 	}
 
 	// Session should be in hub
-	sess, ok := srv.hub.Get(sessionID)
+	_, ok, _ := srv.hub.Get(ctx, sessionID)
 	if !ok {
 		t.Fatalf("session %q not found in hub", sessionID)
 	}
@@ -190,12 +188,14 @@ func TestHandleCLIWebSocket_Reconnect_Success(t *testing.T) {
 	// Wait for session to be marked as disconnected
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if sess.IsDisconnected() {
+		info, ok, _ := srv.hub.Get(ctx, sessionID)
+		if ok && info.Disconnected {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if !sess.IsDisconnected() {
+	info, ok, _ := srv.hub.Get(ctx, sessionID)
+	if !ok || !info.Disconnected {
 		t.Fatal("session not marked as disconnected")
 	}
 
@@ -244,7 +244,11 @@ func TestHandleCLIWebSocket_Reconnect_Success(t *testing.T) {
 	}
 
 	// Session should no longer be disconnected
-	if sess.IsDisconnected() {
+	info, ok, _ = srv.hub.Get(ctx, sessionID)
+	if !ok {
+		t.Error("session not found after reconnect")
+	}
+	if ok && info.Disconnected {
 		t.Error("session still marked as disconnected after reconnect")
 	}
 }

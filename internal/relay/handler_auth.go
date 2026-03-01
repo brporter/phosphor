@@ -61,7 +61,11 @@ func (s *Server) HandleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	verifier := generateCodeVerifier()
-	sess := s.authSessions.Create(req.Provider, verifier, source)
+	sess, err := s.authSessions.Create(r.Context(), req.Provider, verifier, source)
+	if err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
 
 	authURL := fmt.Sprintf("%s/api/auth/authorize?session=%s", s.baseURL, sess.ID)
 
@@ -76,7 +80,11 @@ func (s *Server) HandleAuthLogin(w http.ResponseWriter, r *http.Request) {
 // GET /api/auth/authorize?session=SESSION_ID
 func (s *Server) HandleAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Query().Get("session")
-	sess, ok := s.authSessions.Get(sessionID)
+	sess, ok, err := s.authSessions.Get(r.Context(), sessionID)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	if !ok {
 		http.Error(w, "invalid or expired session", http.StatusBadRequest)
 		return
@@ -145,7 +153,12 @@ func (s *Server) HandleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess, ok := s.authSessions.Get(state)
+	ctx := r.Context()
+	sess, ok, err := s.authSessions.Get(ctx, state)
+	if err != nil {
+		s.renderAuthResult(w, false, "internal error")
+		return
+	}
 	if !ok {
 		s.renderAuthResult(w, false, "session expired or invalid")
 		return
@@ -208,7 +221,7 @@ func (s *Server) HandleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.authSessions.Complete(state, tokenResult.IDToken)
+	s.authSessions.Complete(ctx, state, tokenResult.IDToken)
 
 	// Web-originated logins redirect back to the SPA; CLI logins show a
 	// success page with an optional link to the session list.
@@ -224,7 +237,11 @@ func (s *Server) HandleAuthCallback(w http.ResponseWriter, r *http.Request) {
 func (s *Server) HandleAuthPoll(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Query().Get("session")
 
-	token, ok := s.authSessions.Consume(sessionID)
+	token, ok, err := s.authSessions.Consume(r.Context(), sessionID)
+	if err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if ok {
 		json.NewEncoder(w).Encode(map[string]string{"status": "complete", "id_token": token})

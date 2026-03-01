@@ -1,23 +1,30 @@
 package relay
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/brporter/phosphor/internal/auth"
-	"log/slog"
 )
 
 func TestNewServer(t *testing.T) {
-	hub := NewHub(slog.Default())
+	store := NewMemorySessionStore()
+	hub := NewHub(store, nil, "test", slog.Default())
+	store.SetExpiryCallback(func(ctx context.Context, id string) {
+		hub.Unregister(ctx, id)
+	})
 	logger := slog.Default()
 	baseURL := "http://test"
 	verifier := auth.NewVerifier(slog.Default())
 	devMode := true
+	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
+	t.Cleanup(authSessions.Stop)
 
-	srv := NewServer(hub, logger, baseURL, verifier, devMode)
-	t.Cleanup(func() { srv.authSessions.Stop() })
+	srv := NewServer(hub, logger, baseURL, verifier, devMode, authSessions)
 
 	if srv == nil {
 		t.Fatal("expected non-nil server")
@@ -37,8 +44,12 @@ func TestNewServer(t *testing.T) {
 }
 
 func TestHandler_HealthEndpoint(t *testing.T) {
-	srv := NewServer(NewHub(slog.Default()), slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true)
-	t.Cleanup(func() { srv.authSessions.Stop() })
+	store := NewMemorySessionStore()
+	hub := NewHub(store, nil, "test", slog.Default())
+	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
+	t.Cleanup(authSessions.Stop)
+
+	srv := NewServer(hub, slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true, authSessions)
 
 	handler := srv.Handler()
 
@@ -56,8 +67,12 @@ func TestHandler_HealthEndpoint(t *testing.T) {
 }
 
 func TestHandler_RoutesExist(t *testing.T) {
-	srv := NewServer(NewHub(slog.Default()), slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true)
-	t.Cleanup(func() { srv.authSessions.Stop() })
+	store := NewMemorySessionStore()
+	hub := NewHub(store, nil, "test", slog.Default())
+	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
+	t.Cleanup(authSessions.Stop)
+
+	srv := NewServer(hub, slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true, authSessions)
 
 	handler := srv.Handler()
 

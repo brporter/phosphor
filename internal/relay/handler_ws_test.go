@@ -18,12 +18,17 @@ import (
 // real OIDC verification.
 func newWSTestServer(t *testing.T) (*Server, *httptest.Server) {
 	t.Helper()
-	hub := NewHub(slog.Default())
+	store := NewMemorySessionStore()
+	hub := NewHub(store, nil, "test", slog.Default())
+	store.SetExpiryCallback(func(ctx context.Context, id string) {
+		hub.Unregister(ctx, id)
+	})
 	verifier := auth.NewVerifier(slog.Default())
-	srv := NewServer(hub, slog.Default(), "http://test", verifier, true)
+	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
+	srv := NewServer(hub, slog.Default(), "http://test", verifier, true, authSessions)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
-	t.Cleanup(func() { srv.authSessions.Stop() })
+	t.Cleanup(authSessions.Stop)
 	return srv, ts
 }
 
@@ -107,7 +112,10 @@ func TestHandleCLIWebSocket_FullFlow(t *testing.T) {
 	}
 
 	// Session must be registered in the hub.
-	_, ok := srv.hub.Get(welcome.SessionID)
+	_, ok, err := srv.hub.Get(ctx, welcome.SessionID)
+	if err != nil {
+		t.Fatalf("hub.Get error: %v", err)
+	}
 	if !ok {
 		t.Errorf("session %q not found in hub after Hello/Welcome", welcome.SessionID)
 	}
@@ -397,7 +405,11 @@ func TestHandleCLIWebSocket_Disconnect(t *testing.T) {
 	sessionID := welcome.SessionID
 
 	// Confirm session is in hub.
-	sess, ok := srv.hub.Get(sessionID)
+	_, ok, hubErr := srv.hub.Get(ctx, sessionID)
+	if hubErr != nil {
+		conn.CloseNow()
+		t.Fatalf("hub.Get error: %v", hubErr)
+	}
 	if !ok {
 		conn.CloseNow()
 		t.Fatalf("session %q not found in hub before disconnect", sessionID)
@@ -409,7 +421,8 @@ func TestHandleCLIWebSocket_Disconnect(t *testing.T) {
 	// Poll briefly for the session to be marked as disconnected (grace period).
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if sess.IsDisconnected() {
+		info, ok, _ := srv.hub.Get(ctx, sessionID)
+		if ok && info.Disconnected {
 			return // success: session is in grace period
 		}
 		time.Sleep(10 * time.Millisecond)

@@ -1,33 +1,43 @@
 package relay
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"sync"
 	"testing"
-
-	"github.com/coder/websocket"
 )
 
-// newTestSession creates a minimal Session suitable for hub tests.
-// cliConn is nil; Close() only iterates viewers so this is safe.
-func newTestSession(id, provider, sub string) *Session {
-	return &Session{
+// newTestHub creates a Hub backed by in-memory store with no bus.
+func newTestHub() *Hub {
+	store := NewMemorySessionStore()
+	h := NewHub(store, nil, "test", slog.Default())
+	store.SetExpiryCallback(func(ctx context.Context, id string) {
+		h.Unregister(ctx, id)
+	})
+	return h
+}
+
+// newTestSessionInfo creates a minimal SessionInfo for hub tests.
+func newTestSessionInfo(id, provider, sub string) SessionInfo {
+	return SessionInfo{
 		ID:            id,
 		OwnerProvider: provider,
 		OwnerSub:      sub,
-		viewers:       make(map[string]*websocket.Conn),
-		logger:        slog.Default(),
 	}
 }
 
 func TestHub_RegisterAndGet(t *testing.T) {
-	h := NewHub(slog.Default())
-	s := newTestSession("sess-1", "google", "user-1")
+	h := newTestHub()
+	ctx := context.Background()
+	info := newTestSessionInfo("sess-1", "google", "user-1")
 
-	h.Register(s)
+	h.Register(ctx, info, nil)
 
-	got, ok := h.Get("sess-1")
+	got, ok, err := h.Get(ctx, "sess-1")
+	if err != nil {
+		t.Fatalf("Get error: %v", err)
+	}
 	if !ok {
 		t.Fatal("Get returned false after Register")
 	}
@@ -40,45 +50,49 @@ func TestHub_RegisterAndGet(t *testing.T) {
 }
 
 func TestHub_Get_NotFound(t *testing.T) {
-	h := NewHub(slog.Default())
+	h := newTestHub()
+	ctx := context.Background()
 
-	_, ok := h.Get("nonexistent")
+	_, ok, err := h.Get(ctx, "nonexistent")
+	if err != nil {
+		t.Fatalf("Get error: %v", err)
+	}
 	if ok {
 		t.Error("Get returned true on empty hub, want false")
 	}
 }
 
 func TestHub_Unregister(t *testing.T) {
-	h := NewHub(slog.Default())
-	s := newTestSession("sess-2", "microsoft", "user-2")
+	h := newTestHub()
+	ctx := context.Background()
+	info := newTestSessionInfo("sess-2", "microsoft", "user-2")
 
-	h.Register(s)
-	h.Unregister("sess-2")
+	h.Register(ctx, info, nil)
+	h.Unregister(ctx, "sess-2")
 
-	_, ok := h.Get("sess-2")
+	_, ok, _ := h.Get(ctx, "sess-2")
 	if ok {
 		t.Error("Get returned true after Unregister, want false")
 	}
 }
 
 func TestHub_ListForOwner(t *testing.T) {
-	h := NewHub(slog.Default())
+	h := newTestHub()
+	ctx := context.Background()
 
-	// Two sessions owned by alice, one by bob
-	alice1 := newTestSession("alice-sess-1", "google", "alice")
-	alice2 := newTestSession("alice-sess-2", "google", "alice")
-	bob1 := newTestSession("bob-sess-1", "google", "bob")
+	h.Register(ctx, newTestSessionInfo("alice-sess-1", "google", "alice"), nil)
+	h.Register(ctx, newTestSessionInfo("alice-sess-2", "google", "alice"), nil)
+	h.Register(ctx, newTestSessionInfo("bob-sess-1", "google", "bob"), nil)
 
-	h.Register(alice1)
-	h.Register(alice2)
-	h.Register(bob1)
-
-	aliceSessions := h.ListForOwner("google", "alice")
+	aliceSessions, err := h.ListForOwner(ctx, "google", "alice")
+	if err != nil {
+		t.Fatalf("ListForOwner error: %v", err)
+	}
 	if len(aliceSessions) != 2 {
 		t.Errorf("ListForOwner(alice) returned %d sessions, want 2", len(aliceSessions))
 	}
 
-	bobSessions := h.ListForOwner("google", "bob")
+	bobSessions, _ := h.ListForOwner(ctx, "google", "bob")
 	if len(bobSessions) != 1 {
 		t.Errorf("ListForOwner(bob) returned %d sessions, want 1", len(bobSessions))
 	}
@@ -86,30 +100,38 @@ func TestHub_ListForOwner(t *testing.T) {
 		t.Errorf("bob's session ID = %q, want bob-sess-1", bobSessions[0].ID)
 	}
 
-	// Different provider — same sub should not match
-	noSessions := h.ListForOwner("microsoft", "alice")
+	noSessions, _ := h.ListForOwner(ctx, "microsoft", "alice")
 	if len(noSessions) != 0 {
 		t.Errorf("ListForOwner(microsoft, alice) returned %d sessions, want 0", len(noSessions))
 	}
 }
 
 func TestHub_CloseAll(t *testing.T) {
-	h := NewHub(slog.Default())
+	h := newTestHub()
+	ctx := context.Background()
 
-	h.Register(newTestSession("s1", "google", "u1"))
-	h.Register(newTestSession("s2", "google", "u2"))
+	h.Register(ctx, newTestSessionInfo("s1", "google", "u1"), nil)
+	h.Register(ctx, newTestSessionInfo("s2", "google", "u2"), nil)
 
 	h.CloseAll()
 
-	_, ok1 := h.Get("s1")
-	_, ok2 := h.Get("s2")
-	if ok1 || ok2 {
-		t.Error("sessions still present after CloseAll")
+	_, ok1, _ := h.Get(ctx, "s1")
+	_, ok2, _ := h.Get(ctx, "s2")
+	// CloseAll only clears locals; store entries remain.
+	// But locals should be gone.
+	_, lok1 := h.GetLocal("s1")
+	_, lok2 := h.GetLocal("s2")
+	if lok1 || lok2 {
+		t.Error("local sessions still present after CloseAll")
 	}
+	// Store still has entries (CloseAll doesn't purge store for graceful shutdown).
+	_ = ok1
+	_ = ok2
 }
 
 func TestHub_ConcurrentAccess(t *testing.T) {
-	h := NewHub(slog.Default())
+	h := newTestHub()
+	ctx := context.Background()
 
 	const goroutines = 20
 	var wg sync.WaitGroup
@@ -119,13 +141,13 @@ func TestHub_ConcurrentAccess(t *testing.T) {
 		go func(n int) {
 			defer wg.Done()
 			id := fmt.Sprintf("concurrent-sess-%d", n)
-			s := newTestSession(id, "google", fmt.Sprintf("user-%d", n))
+			info := newTestSessionInfo(id, "google", fmt.Sprintf("user-%d", n))
 
-			h.Register(s)
-			h.Get(id)
-			h.ListForOwner("google", fmt.Sprintf("user-%d", n))
-			h.Unregister(id)
-			h.Get(id)
+			h.Register(ctx, info, nil)
+			h.Get(ctx, id)
+			h.ListForOwner(ctx, "google", fmt.Sprintf("user-%d", n))
+			h.Unregister(ctx, id)
+			h.Get(ctx, id)
 		}(i)
 	}
 
