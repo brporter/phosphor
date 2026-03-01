@@ -9,6 +9,7 @@ export const MsgType = {
   Welcome: 0x11,
   Join: 0x12,
   Joined: 0x13,
+  Reconnect: 0x14,
   End: 0x15,
   Error: 0x16,
   ViewerCount: 0x20,
@@ -34,6 +35,10 @@ export interface ErrorPayload {
 export interface ResizePayload {
   cols: number;
   rows: number;
+}
+
+export interface ReconnectPayload {
+  status: string; // "disconnected" or "reconnected"
 }
 
 const encoder = new TextEncoder();

@@ -9,6 +9,7 @@ const (
 	TypeWelcome     byte = 0x11
 	TypeJoin        byte = 0x12
 	TypeJoined      byte = 0x13
+	TypeReconnect   byte = 0x14
 	TypeEnd         byte = 0x15
 	TypeError       byte = 0x16
 	TypeViewerCount byte = 0x20
@@ -24,12 +25,17 @@ type Hello struct {
 	Cols    int    `json:"cols"`
 	Rows    int    `json:"rows"`
 	Command string `json:"command"`
+
+	// Set on reconnect attempts
+	SessionID      string `json:"session_id,omitempty"`
+	ReconnectToken string `json:"reconnect_token,omitempty"`
 }
 
 // Welcome is sent by the server in response to Hello.
 type Welcome struct {
-	SessionID string `json:"session_id"`
-	ViewURL   string `json:"view_url"`
+	SessionID      string `json:"session_id"`
+	ViewURL        string `json:"view_url"`
+	ReconnectToken string `json:"reconnect_token"`
 }
 
 // Join is sent by a viewer to attach to a session.
@@ -66,4 +72,9 @@ type ViewerCount struct {
 // Mode notifies viewers of the session mode.
 type Mode struct {
 	Mode string `json:"mode"`
+}
+
+// Reconnect notifies viewers of CLI disconnect/reconnect events.
+type Reconnect struct {
+	Status string `json:"status"` // "disconnected" or "reconnected"
 }

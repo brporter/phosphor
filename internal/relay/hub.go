@@ -3,6 +3,9 @@ package relay
 import (
 	"log/slog"
 	"sync"
+	"time"
+
+	"github.com/coder/websocket"
 )
 
 // Hub manages all active sessions and routes messages.
@@ -62,6 +65,41 @@ func (h *Hub) ListForOwner(provider, sub string) []*Session {
 		}
 	}
 	return result
+}
+
+// Disconnect marks a session's CLI as disconnected and schedules cleanup after the grace period.
+func (h *Hub) Disconnect(sessionID string, gracePeriod time.Duration) {
+	h.mu.RLock()
+	s, ok := h.sessions[sessionID]
+	h.mu.RUnlock()
+	if !ok {
+		return
+	}
+
+	s.MarkDisconnected()
+	h.logger.Info("cli disconnected, grace period started", "id", sessionID, "grace", gracePeriod)
+
+	go func() {
+		time.Sleep(gracePeriod)
+		if s.IsDisconnected() {
+			h.Unregister(sessionID)
+			h.logger.Info("grace period expired, session removed", "id", sessionID)
+		}
+	}()
+}
+
+// Reconnect replaces the CLI connection on a disconnected session.
+func (h *Hub) Reconnect(sessionID string, conn *websocket.Conn) bool {
+	h.mu.RLock()
+	s, ok := h.sessions[sessionID]
+	h.mu.RUnlock()
+	if !ok || !s.IsDisconnected() {
+		return false
+	}
+
+	s.ReplaceCLI(conn)
+	h.logger.Info("cli reconnected", "id", sessionID)
+	return true
 }
 
 // CloseAll shuts down all sessions (used during server shutdown).

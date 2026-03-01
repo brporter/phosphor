@@ -2,7 +2,9 @@ package relay
 
 import (
 	"context"
+	"crypto/subtle"
 	"net/http"
+	"time"
 
 	"github.com/coder/websocket"
 	gonanoid "github.com/matoous/go-nanoid/v2"
@@ -49,17 +51,57 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create session
-	sessionID, _ := gonanoid.New(12)
-	session := NewSession(sessionID, ownerProvider, ownerSub, conn, hello, s.logger)
-	s.hub.Register(session)
-	defer s.hub.Unregister(sessionID)
+	var session *Session
+	var sessionID string
 
-	// Send Welcome
-	viewURL := s.baseURL + "/session/" + sessionID
-	welcome := protocol.Welcome{SessionID: sessionID, ViewURL: viewURL}
-	welcomeData, _ := protocol.Encode(protocol.TypeWelcome, welcome)
-	conn.Write(ctx, websocket.MessageBinary, welcomeData)
+	if hello.SessionID != "" && hello.ReconnectToken != "" {
+		// Reconnect path
+		sessionID = hello.SessionID
+		existing, ok := s.hub.Get(sessionID)
+		if !ok {
+			sendError(ctx, conn, "session_not_found", "session does not exist or has expired")
+			return
+		}
+		if existing.OwnerProvider != ownerProvider || existing.OwnerSub != ownerSub {
+			sendError(ctx, conn, "auth_failed", "session belongs to a different user")
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(existing.ReconnectToken), []byte(hello.ReconnectToken)) != 1 {
+			sendError(ctx, conn, "invalid_token", "invalid reconnect token")
+			return
+		}
+		if !s.hub.Reconnect(sessionID, conn) {
+			sendError(ctx, conn, "reconnect_failed", "session is not in a disconnected state")
+			return
+		}
+		session = existing
+		session.RotateReconnectToken()
+
+		welcome := protocol.Welcome{
+			SessionID:      sessionID,
+			ViewURL:        s.baseURL + "/session/" + sessionID,
+			ReconnectToken: session.ReconnectToken,
+		}
+		welcomeData, _ := protocol.Encode(protocol.TypeWelcome, welcome)
+		conn.Write(ctx, websocket.MessageBinary, welcomeData)
+
+		s.logger.Info("cli reconnected", "session", sessionID)
+	} else {
+		// New connection path
+		sessionID, _ = gonanoid.New(12)
+		session = NewSession(sessionID, ownerProvider, ownerSub, conn, hello, s.logger)
+		s.hub.Register(session)
+
+		welcome := protocol.Welcome{
+			SessionID:      sessionID,
+			ViewURL:        s.baseURL + "/session/" + sessionID,
+			ReconnectToken: session.ReconnectToken,
+		}
+		welcomeData, _ := protocol.Encode(protocol.TypeWelcome, welcome)
+		conn.Write(ctx, websocket.MessageBinary, welcomeData)
+	}
+
+	defer s.hub.Disconnect(sessionID, 60*time.Second)
 
 	// Read loop: forward CLI output to viewers
 	for {

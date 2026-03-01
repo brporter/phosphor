@@ -6,6 +6,7 @@ import {
   encode,
   type JoinedPayload,
   type ErrorPayload,
+  type ReconnectPayload,
 } from "../lib/protocol";
 
 interface UseWebSocketOptions {
@@ -61,6 +62,15 @@ export function useWebSocket({
         case MsgType.Resize: {
           const sz = decodeJSON<{ cols: number; rows: number }>(payload);
           onResize(sz.cols, sz.rows);
+          break;
+        }
+        case MsgType.Reconnect: {
+          const info = decodeJSON<ReconnectPayload>(payload);
+          if (info.status === "disconnected") {
+            setConnected(false);
+          } else if (info.status === "reconnected") {
+            setConnected(true);
+          }
           break;
         }
         case MsgType.End:

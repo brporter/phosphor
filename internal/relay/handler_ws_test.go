@@ -363,7 +363,7 @@ func TestHandleViewerWebSocket_NotOwner(t *testing.T) {
 // --- TestHandleCLIWebSocket_Disconnect ---
 
 // TestHandleCLIWebSocket_Disconnect verifies that closing the CLI WebSocket
-// causes the session to be removed from the hub.
+// marks the session as disconnected (grace period) rather than immediately removing it.
 func TestHandleCLIWebSocket_Disconnect(t *testing.T) {
 	srv, ts := newWSTestServer(t)
 
@@ -397,7 +397,8 @@ func TestHandleCLIWebSocket_Disconnect(t *testing.T) {
 	sessionID := welcome.SessionID
 
 	// Confirm session is in hub.
-	if _, ok := srv.hub.Get(sessionID); !ok {
+	sess, ok := srv.hub.Get(sessionID)
+	if !ok {
 		conn.CloseNow()
 		t.Fatalf("session %q not found in hub before disconnect", sessionID)
 	}
@@ -405,14 +406,14 @@ func TestHandleCLIWebSocket_Disconnect(t *testing.T) {
 	// Close the WebSocket connection.
 	conn.Close(websocket.StatusNormalClosure, "done")
 
-	// Poll the hub briefly; the server goroutine needs a moment to unregister.
+	// Poll briefly for the session to be marked as disconnected (grace period).
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, ok := srv.hub.Get(sessionID); !ok {
-			return // success: session was removed
+		if sess.IsDisconnected() {
+			return // success: session is in grace period
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	t.Errorf("session %q still present in hub after CLI disconnect", sessionID)
+	t.Errorf("session %q not marked as disconnected after CLI disconnect", sessionID)
 }
