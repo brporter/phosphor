@@ -3,6 +3,7 @@ import SwiftUI
 struct SessionListView: View {
     let viewModel: SessionListViewModel
     let auth: AuthViewModel
+    @State private var showSettings = false
 
     var body: some View {
         ZStack {
@@ -23,11 +24,24 @@ struct SessionListView: View {
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                NavigationLink(destination: SettingsView(auth: auth)) {
+                Button {
+                    showSettings = true
+                } label: {
                     Image(systemName: "gear")
                         .foregroundStyle(PhosphorTheme.text)
                 }
             }
+        }
+        .sheet(isPresented: $showSettings) {
+            NavigationStack {
+                SettingsView(auth: auth)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showSettings = false }
+                        }
+                    }
+            }
+            .preferredColorScheme(.dark)
         }
         .refreshable {
             await viewModel.refresh()

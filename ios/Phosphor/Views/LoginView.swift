@@ -4,6 +4,10 @@ import SwiftUI
 struct LoginView: View {
     let auth: AuthViewModel
 
+    @AppStorage("relay_url") private var relayURL = "https://phosphor.betaporter.dev"
+    @State private var isEditingRelay = false
+    @State private var editedURL = ""
+
     var body: some View {
         ZStack {
             PhosphorTheme.background.ignoresSafeArea()
@@ -63,7 +67,42 @@ struct LoginView: View {
                 }
 
                 Spacer()
+
+                // Relay URL
+                Button {
+                    editedURL = relayURL
+                    isEditingRelay = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "server.rack")
+                            .font(.system(size: 11))
+                        Text(relayURL)
+                            .font(.system(size: 12, design: .monospaced))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(PhosphorTheme.text.opacity(0.5))
+                }
+                .padding(.bottom, 16)
             }
+        }
+        .alert("Relay Server", isPresented: $isEditingRelay) {
+            TextField("https://relay.example.com", text: $editedURL)
+                #if !os(macOS)
+                .textInputAutocapitalization(.never)
+                #endif
+                .autocorrectionDisabled()
+            Button("Save") {
+                let trimmed = editedURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    relayURL = trimmed
+                }
+            }
+            Button("Reset to Default", role: .destructive) {
+                relayURL = "https://phosphor.betaporter.dev"
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Enter the URL of your Phosphor relay server.")
         }
     }
 }
