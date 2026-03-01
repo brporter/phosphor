@@ -14,8 +14,10 @@ const (
 	TypeError       byte = 0x16
 	TypeViewerCount byte = 0x20
 	TypeMode        byte = 0x21
-	TypePing        byte = 0x30
-	TypePong        byte = 0x31
+	TypeProcessExited byte = 0x17
+	TypeRestart       byte = 0x18
+	TypePing          byte = 0x30
+	TypePong          byte = 0x31
 )
 
 // Hello is sent by the CLI when connecting.
@@ -77,4 +79,9 @@ type Mode struct {
 // Reconnect notifies viewers of CLI disconnect/reconnect events.
 type Reconnect struct {
 	Status string `json:"status"` // "disconnected" or "reconnected"
+}
+
+// ProcessExited is sent by the CLI when the subprocess exits.
+type ProcessExited struct {
+	ExitCode int `json:"exit_code"`
 }

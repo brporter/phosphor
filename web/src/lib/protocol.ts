@@ -14,6 +14,8 @@ export const MsgType = {
   Error: 0x16,
   ViewerCount: 0x20,
   Mode: 0x21,
+  ProcessExited: 0x17,
+  Restart: 0x18,
   Ping: 0x30,
   Pong: 0x31,
 } as const;
@@ -39,6 +41,10 @@ export interface ResizePayload {
 
 export interface ReconnectPayload {
   status: string; // "disconnected" or "reconnected"
+}
+
+export interface ProcessExitedPayload {
+  exit_code: number;
 }
 
 const encoder = new TextEncoder();
