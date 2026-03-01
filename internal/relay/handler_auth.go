@@ -33,7 +33,7 @@ func codeChallenge(verifier string) string {
 
 type authLoginRequest struct {
 	Provider string `json:"provider"`
-	Source   string `json:"source"` // "web" or "cli" (default)
+	Source   string `json:"source"` // "web", "mobile", or "cli" (default)
 }
 
 type authLoginResponse struct {
@@ -223,13 +223,17 @@ func (s *Server) HandleAuthCallback(w http.ResponseWriter, r *http.Request) {
 
 	s.authSessions.Complete(ctx, state, tokenResult.IDToken)
 
-	// Web-originated logins redirect back to the SPA; CLI logins show a
-	// success page with an optional link to the session list.
-	if sess.Source == "web" {
+	// Web-originated logins redirect back to the SPA; mobile logins redirect
+	// to the phosphor:// custom scheme; CLI logins show a success page.
+	switch sess.Source {
+	case "web":
 		http.Redirect(w, r, s.baseURL, http.StatusFound)
-		return
+	case "mobile":
+		target := fmt.Sprintf("phosphor://auth/callback?session=%s", url.QueryEscape(state))
+		http.Redirect(w, r, target, http.StatusFound)
+	default:
+		s.renderAuthResult(w, true, "")
 	}
-	s.renderAuthResult(w, true, "")
 }
 
 // HandleAuthPoll checks if a login session has completed.
