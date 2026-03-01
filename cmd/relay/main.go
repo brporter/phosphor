@@ -55,6 +55,31 @@ func main() {
 			logger.Warn("failed to register Google provider", "err", err)
 		}
 	}
+	if clientID := os.Getenv("APPLE_CLIENT_ID"); clientID != "" {
+		teamID := os.Getenv("APPLE_TEAM_ID")
+		keyID := os.Getenv("APPLE_KEY_ID")
+		pkRaw := os.Getenv("APPLE_PRIVATE_KEY")
+
+		if teamID == "" || keyID == "" || pkRaw == "" {
+			logger.Warn("APPLE_CLIENT_ID set but missing APPLE_TEAM_ID, APPLE_KEY_ID, or APPLE_PRIVATE_KEY")
+		} else {
+			privateKey, err := auth.ParseP8PrivateKey([]byte(pkRaw))
+			if err != nil {
+				logger.Warn("failed to parse Apple private key", "err", err)
+			} else {
+				if err := verifier.AddProvider(ctx, auth.ProviderConfig{
+					Name:       "apple",
+					Issuer:     "https://appleid.apple.com",
+					ClientID:   clientID,
+					TeamID:     teamID,
+					KeyID:      keyID,
+					PrivateKey: privateKey,
+				}); err != nil {
+					logger.Warn("failed to register Apple provider", "err", err)
+				}
+			}
+		}
+	}
 
 	hub := relay.NewHub(logger)
 	srv := relay.NewServer(hub, logger, baseURL, verifier, devMode)
