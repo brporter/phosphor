@@ -7,4 +7,10 @@ struct SessionData: Codable, Identifiable {
     let rows: Int
     let command: String
     let viewers: Int
+    let processExited: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, mode, cols, rows, command, viewers
+        case processExited = "process_exited"
+    }
 }

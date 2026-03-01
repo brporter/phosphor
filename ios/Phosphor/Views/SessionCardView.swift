@@ -22,6 +22,19 @@ struct SessionCardView: View {
                     .padding(.vertical, 3)
                     .background(PhosphorTheme.amber)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                // Exited badge
+                if session.processExited {
+                    Text("EXITED")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(PhosphorTheme.red)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .strokeBorder(PhosphorTheme.red, lineWidth: 1)
+                        )
+                }
             }
 
             HStack(spacing: 16) {
