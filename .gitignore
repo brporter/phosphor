@@ -29,3 +29,6 @@ tokens.json
 
 # Build
 /bin/
+
+# Worktrees
+.worktrees/
