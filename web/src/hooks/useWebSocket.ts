@@ -7,6 +7,7 @@ import {
   type JoinedPayload,
   type ErrorPayload,
   type ReconnectPayload,
+  type ProcessExitedPayload,
 } from "../lib/protocol";
 
 interface UseWebSocketOptions {
@@ -28,6 +29,7 @@ export function useWebSocket({
   const [connected, setConnected] = useState(false);
   const [joined, setJoined] = useState<JoinedPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [processExited, setProcessExited] = useState<number | null>(null);
 
   useEffect(() => {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -73,6 +75,14 @@ export function useWebSocket({
           }
           break;
         }
+        case MsgType.ProcessExited: {
+          const info = decodeJSON<ProcessExitedPayload>(payload);
+          setProcessExited(info.exit_code);
+          break;
+        }
+        case MsgType.Restart:
+          setProcessExited(null);
+          break;
         case MsgType.End:
           setConnected(false);
           onEnd();
@@ -116,5 +126,5 @@ export function useWebSocket({
     }
   }, []);
 
-  return { connected, joined, error, sendStdin, sendResize };
+  return { connected, joined, error, processExited, sendStdin, sendResize };
 }

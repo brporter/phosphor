@@ -7,6 +7,7 @@ export interface SessionData {
   rows: number;
   command: string;
   viewers: number;
+  process_exited: boolean;
 }
 
 export function SessionCard({ session }: { session: SessionData }) {
@@ -51,6 +52,19 @@ export function SessionCard({ session }: { session: SessionData }) {
         >
           {session.mode}
         </span>
+        {session.process_exited && (
+          <span
+            style={{
+              fontSize: 11,
+              color: "var(--red)",
+              border: "1px solid var(--red)",
+              padding: "2px 6px",
+              marginLeft: 4,
+            }}
+          >
+            exited
+          </span>
+        )}
       </div>
       <div
         style={{
