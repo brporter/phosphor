@@ -1,8 +1,10 @@
+import { useAuth } from "../auth/useAuth";
 import { useSessions } from "../hooks/useSessions";
 import { SessionCard } from "./SessionCard";
 
 export function SessionList() {
-  const { sessions, isLoading, error } = useSessions();
+  const { getToken } = useAuth();
+  const { sessions, isLoading, error, refresh } = useSessions();
 
   if (isLoading) {
     return (
@@ -66,7 +68,7 @@ Session live: http://localhost:8080/session/abc123`}
       </h2>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {sessions.map((s) => (
-          <SessionCard key={s.id} session={s} />
+          <SessionCard key={s.id} session={s} token={getToken()} onDestroyed={refresh} />
         ))}
       </div>
     </div>

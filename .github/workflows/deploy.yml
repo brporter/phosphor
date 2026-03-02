@@ -67,7 +67,7 @@ jobs:
               "APPLE_PRIVATE_KEY=${{ secrets.APPLE_PRIVATE_KEY }}" \
               "REDIS_URL=${{ secrets.REDIS_URL }}"
 
-  # ── Build CLI for all platforms, create GitHub Release on PR merge ──
+  # ── Build CLI for all platforms, create GitHub Release ──
   release:
     name: Build CLI & Release
     runs-on: ubuntu-latest
@@ -102,14 +102,12 @@ jobs:
               go build -ldflags="-s -w" -o "$output" ./cmd/phosphor
           done
 
-      - name: Find merged pull request
-        id: pr
+      - name: Generate release notes
+        id: notes
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            // Use listPullRequestsAssociatedWithCommit — works with squash,
-            // rebase, and regular merge strategies.
             const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -119,19 +117,22 @@ jobs:
             if (merged) {
               fs.writeFileSync('release-notes.md', merged.body || 'No description provided.');
               core.setOutput('title', merged.title);
-              core.setOutput('found', 'true');
             } else {
-              fs.writeFileSync('release-notes.md', `Release from commit ${context.sha.substring(0, 7)}`);
-              core.setOutput('title', 'Release');
-              core.setOutput('found', 'false');
+              const { data: commit } = await github.rest.repos.getCommit({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: context.sha
+              });
+              const summary = commit.commit.message.split('\n')[0];
+              fs.writeFileSync('release-notes.md', summary);
+              core.setOutput('title', summary);
             }
 
       - name: Create GitHub Release
-        if: steps.pr.outputs.found == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: "v1.0.${{ github.run_number }} \u2014 ${{ steps.pr.outputs.title }}"
+          name: "v1.0.${{ github.run_number }} - ${{ steps.notes.outputs.title }}"
           body_path: release-notes.md
           files: dist/*
           draft: false

@@ -2,6 +2,21 @@ import type { SessionData } from "../components/SessionCard";
 
 const BASE = "";
 
+export async function destroySession(id: string, token: string | null): Promise<void> {
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${BASE}/api/sessions/${id}`, {
+    method: "DELETE",
+    headers,
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to destroy session: ${res.status}`);
+  }
+}
+
 export async function fetchSessions(token: string | null): Promise<SessionData[]> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

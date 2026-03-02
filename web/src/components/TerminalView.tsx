@@ -104,11 +104,6 @@ export function TerminalView() {
     const term = termRef.current;
     if (!term || !joined) return;
 
-    // Resize terminal to match session dimensions
-    if (joined.cols > 0 && joined.rows > 0) {
-      term.resize(joined.cols, joined.rows);
-    }
-
     // Forward user input
     const disposable = term.onData((data) => {
       if (joined.mode === "pty") {
@@ -128,6 +123,10 @@ export function TerminalView() {
     const disposable = term.onResize(({ cols, rows }) => {
       sendResize(cols, rows);
     });
+
+    // Fit to container and send current dimensions to relay
+    fitRef.current?.fit();
+    sendResize(term.cols, term.rows);
 
     return () => disposable.dispose();
   }, [joined, sendResize]);
@@ -164,7 +163,7 @@ export function TerminalView() {
           </Link>
           {joined && (
             <span style={{ color: "var(--amber)" }}>
-              {joined.command || joined.mode} ({joined.cols}x{joined.rows})
+              {joined.command || joined.mode}
             </span>
           )}
         </div>
@@ -203,6 +202,7 @@ export function TerminalView() {
           view-only (pipe mode)
         </div>
       )}
+
     </div>
   );
 }

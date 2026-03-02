@@ -188,6 +188,11 @@ func (ls *LocalSession) Close() {
 	}
 	ls.viewers = make(map[string]*websocket.Conn)
 
+	if ls.cliConn != nil {
+		ls.cliConn.Write(context.Background(), websocket.MessageBinary, endMsg)
+		ls.cliConn.Close(websocket.StatusNormalClosure, "session destroyed")
+	}
+
 	if ls.cancelOutput != nil {
 		ls.cancelOutput()
 	}

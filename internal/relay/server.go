@@ -32,6 +32,7 @@ func (s *Server) Handler() http.Handler {
 
 	// REST API (auth via middleware)
 	mux.HandleFunc("GET /api/sessions", s.HandleListSessions)
+	mux.HandleFunc("DELETE /api/sessions/{id}", s.HandleDestroySession)
 
 	// Auth flow endpoints
 	mux.HandleFunc("POST /api/auth/login", s.HandleAuthLogin)

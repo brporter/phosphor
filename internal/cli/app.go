@@ -245,11 +245,14 @@ func (a *App) runConnection(
 
 	procDead := make(chan struct{})
 	connLost := make(chan struct{})
+	sessionDestroyed := make(chan struct{})
 	restartCh := make(chan struct{}, 1)
 	var procDeadOnce sync.Once
 	var connLostOnce sync.Once
+	var destroyedOnce sync.Once
 	closeProcDead := func() { procDeadOnce.Do(func() { close(procDead) }) }
 	closeConnLost := func() { connLostOnce.Do(func() { close(connLost) }) }
+	closeDestroyed := func() { destroyedOnce.Do(func() { close(sessionDestroyed) }) }
 
 	// Bridge: process stdout → relay
 	go func() {
@@ -315,13 +318,18 @@ func (a *App) runConnection(
 				case restartCh <- struct{}{}:
 				default:
 				}
+			case protocol.TypeEnd:
+				a.Logger.Info("session destroyed by owner")
+				fmt.Fprintf(os.Stderr, "Session destroyed by owner. Shutting down.\n")
+				closeDestroyed()
+				return
 			case protocol.TypePing:
 				ws.Send(connCtx, protocol.TypePong, nil)
 			}
 		}
 	}()
 
-	// Wait for process death OR connection loss (whichever comes first).
+	// Wait for process death, connection loss, or session destruction (whichever comes first).
 	select {
 	case <-procDead:
 		// Process exited — handle ProcessExited/Restart on this connection.
@@ -331,7 +339,10 @@ func (a *App) runConnection(
 			exitCode = code
 		default:
 		}
-		return a.handleProcessExited(appCtx, ws, exitCode, restartCh, connLost)
+		return a.handleProcessExited(appCtx, ws, exitCode, restartCh, connLost, sessionDestroyed)
+	case <-sessionDestroyed:
+		// Session was destroyed by owner — clean exit.
+		return connectionResult{}
 	case <-connLost:
 		// WebSocket error — connection is dead.
 		// Check if process also died (race between ws error and process exit).
@@ -362,6 +373,7 @@ func (a *App) handleProcessExited(
 	exitCode int,
 	restartCh <-chan struct{},
 	connLost <-chan struct{},
+	sessionDestroyed <-chan struct{},
 ) connectionResult {
 	switch a.Restart {
 	case "manual":
@@ -379,6 +391,9 @@ func (a *App) handleProcessExited(
 			a.Logger.Info("restart signal received")
 			fmt.Fprintf(os.Stderr, "Restart signal received. Restarting process...\n")
 			return connectionResult{processExited: true, exitCode: exitCode, restarted: true}
+		case <-sessionDestroyed:
+			a.Logger.Info("session destroyed while waiting for restart")
+			return connectionResult{}
 		case <-connLost:
 			a.Logger.Info("connection lost while waiting for restart")
 			return connectionResult{processExited: true, exitCode: exitCode}

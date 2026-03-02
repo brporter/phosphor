@@ -15,6 +15,34 @@ type sessionListItem struct {
 	ProcessExited bool   `json:"process_exited"`
 }
 
+// HandleDestroySession terminates a session. Only the session owner can destroy it.
+func (s *Server) HandleDestroySession(w http.ResponseWriter, r *http.Request) {
+	provider, sub, err := s.extractIdentity(r)
+	if err != nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	id := r.PathValue("id")
+	info, ok, err := s.hub.Get(r.Context(), id)
+	if err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	if info.OwnerProvider != provider || info.OwnerSub != sub {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
+	s.hub.Unregister(r.Context(), id)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // HandleListSessions returns the sessions owned by the authenticated user.
 func (s *Server) HandleListSessions(w http.ResponseWriter, r *http.Request) {
 	provider, sub, err := s.extractIdentity(r)
