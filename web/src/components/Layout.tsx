@@ -38,6 +38,14 @@ export function Layout() {
         </Link>
 
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <a
+            href="https://github.com/brporter/phosphor/releases"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "var(--text)", fontSize: 12, textDecoration: "none" }}
+          >
+            releases
+          </a>
           {user ? (
             <>
               <span style={{ color: "var(--text)", fontSize: 12 }}>
