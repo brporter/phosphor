@@ -146,7 +146,7 @@ describe("AuthProvider", () => {
       expect(mockFetch).toHaveBeenCalledWith("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: "microsoft" }),
+        body: JSON.stringify({ provider: "microsoft", source: "web" }),
       });
     });
 

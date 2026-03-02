@@ -28,7 +28,7 @@ export function TerminalView() {
     termRef.current?.write("\r\n\x1b[1;31m[Session ended]\x1b[0m\r\n");
   }, []);
 
-  const { connected, joined, error, processExited, sendStdin, sendResize } = useWebSocket({
+  const { connected, joined, error, processExited, sendStdin, sendResize, sendRestart } = useWebSocket({
     sessionId: id ?? "",
     token: getToken(),
     onData,
@@ -135,7 +135,7 @@ export function TerminalView() {
   useEffect(() => {
     if (processExited !== null) {
       termRef.current?.write(
-        `\r\n\x1b[1;33m[Process exited (code ${processExited}). Click session in list to restart.]\x1b[0m\r\n`
+        `\r\n\x1b[1;33m[Process exited (code ${processExited})]\x1b[0m\r\n`
       );
     }
   }, [processExited]);
@@ -170,7 +170,10 @@ export function TerminalView() {
         </div>
         <div>
           {processExited !== null ? (
-            <span style={{ color: "var(--amber)" }}>process exited ({processExited})</span>
+            <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ color: "var(--amber)" }}>process exited ({processExited})</span>
+              <button onClick={sendRestart}>restart</button>
+            </span>
           ) : ended ? (
             <span style={{ color: "var(--red)" }}>disconnected</span>
           ) : connected ? (

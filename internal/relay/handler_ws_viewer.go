@@ -140,6 +140,9 @@ func (s *Server) HandleViewerWebSocket(w http.ResponseWriter, r *http.Request) {
 					s.hub.SendInput(ctx, join.SessionID, encoded)
 				}
 			}
+		case protocol.TypeRestart:
+			s.hub.RestartProcess(ctx, join.SessionID)
+			s.logger.Info("viewer requested process restart", "session", sessionID, "viewer", viewerID)
 		case protocol.TypePong:
 			// heartbeat response
 		}

@@ -126,5 +126,12 @@ export function useWebSocket({
     }
   }, []);
 
-  return { connected, joined, error, processExited, sendStdin, sendResize };
+  const sendRestart = useCallback(() => {
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(encode(MsgType.Restart));
+    }
+  }, []);
+
+  return { connected, joined, error, processExited, sendStdin, sendResize, sendRestart };
 }

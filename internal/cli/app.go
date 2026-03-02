@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -42,8 +43,8 @@ type connectionResult struct {
 	err           error
 	processExited bool
 	exitCode      int
-	ws            *WSConn // keep WebSocket alive for manual restart wait
-	authFailed    bool    // relay rejected our token
+	restarted     bool // true if we received TypeRestart (manual mode)
+	authFailed    bool // relay rejected our token
 }
 
 // Run starts the CLI session with restart support.
@@ -51,8 +52,10 @@ func (a *App) Run(ctx context.Context) error {
 	appCtx, appCancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer appCancel()
 
+	var sessionID, reconnectToken string
+
 	for {
-		err := a.runWithProcess(appCtx)
+		err := a.runWithProcess(appCtx, &sessionID, &reconnectToken)
 		if appCtx.Err() != nil {
 			a.Logger.Info("session ended")
 			return nil
@@ -82,10 +85,12 @@ func (a *App) Run(ctx context.Context) error {
 }
 
 // runWithProcess manages the PTY lifecycle and reconnection loop for a single process.
-func (a *App) runWithProcess(appCtx context.Context) error {
+func (a *App) runWithProcess(appCtx context.Context, sessionID, reconnectToken *string) error {
 	var cols, rows int
 	var proc io.ReadWriteCloser
 	var ptyProc PTYProcess
+
+	processExited := make(chan int, 1)
 
 	if a.Mode == "pty" {
 		p, c, r, err := StartPTY(a.Command)
@@ -97,59 +102,40 @@ func (a *App) runWithProcess(appCtx context.Context) error {
 		ptyProc = p
 		cols = c
 		rows = r
+
+		a.Logger.Info("process started", "pid", p.Pid(), "command", strings.Join(a.Command, " "))
+
+		go func() {
+			exitCode, waitErr := p.Wait(appCtx)
+			if waitErr != nil {
+				a.Logger.Warn("process wait error", "pid", p.Pid(), "err", waitErr)
+			} else {
+				a.Logger.Info("process exited", "pid", p.Pid(), "exit_code", exitCode)
+			}
+			processExited <- exitCode
+		}()
 	} else {
 		proc = NewPipeReader(os.Stdin)
 		cols = 80
 		rows = 24
 	}
 
-	var sessionID, reconnectToken string
 	attempt := 0
 
 	for {
-		result := a.runConnection(appCtx, proc, ptyProc, cols, rows, &sessionID, &reconnectToken)
+		result := a.runConnection(appCtx, proc, ptyProc, cols, rows, sessionID, reconnectToken, processExited)
 
 		if result.processExited {
 			switch a.Restart {
 			case "manual":
-				if result.ws != nil {
-					// Send ProcessExited to relay, wait for TypeRestart
-					exitPayload := protocol.ProcessExited{ExitCode: result.exitCode}
-					if err := result.ws.Send(appCtx, protocol.TypeProcessExited, exitPayload); err != nil {
-						return fmt.Errorf("send process exited: %w", err)
-					}
-					fmt.Fprintf(os.Stderr, "Process exited (code %d). Waiting for restart...\n", result.exitCode)
-					a.Logger.Info("waiting for restart signal", "exit_code", result.exitCode)
-
-					// Wait loop for TypeRestart
-					for {
-						mt, _, recvErr := result.ws.Receive(appCtx)
-						if recvErr != nil {
-							a.Logger.Info("connection lost while waiting for restart", "err", recvErr)
-							return fmt.Errorf("connection lost while waiting for restart")
-						}
-						if mt == protocol.TypeRestart {
-							a.Logger.Info("restart signal received")
-							fmt.Fprintf(os.Stderr, "Restart signal received. Restarting process...\n")
-							result.ws.Close()
-							return errProcessExited // triggers outer loop in Run()
-						}
-						if mt == protocol.TypePing {
-							result.ws.Send(appCtx, protocol.TypePong, nil)
-						}
-					}
+				if result.restarted {
+					return errProcessExited
 				}
-				// No ws available, just end
+				// Connection lost while waiting for restart, or no ws
 				return nil
 			case "auto":
-				if result.ws != nil {
-					result.ws.Close()
-				}
 				return errProcessExited
 			default: // "never" or unset
-				if result.ws != nil {
-					result.ws.Close()
-				}
 				return nil
 			}
 		}
@@ -189,12 +175,15 @@ func (a *App) runWithProcess(appCtx context.Context) error {
 
 // runConnection establishes a single WebSocket connection to the relay,
 // performs the Hello/Welcome handshake, and bridges I/O until the connection drops.
+// If the process exits, runConnection handles the ProcessExited/Restart exchange
+// itself (keeping the ws alive), then returns the result.
 func (a *App) runConnection(
 	appCtx context.Context,
 	proc io.ReadWriteCloser,
 	ptyProc PTYProcess,
 	cols, rows int,
 	sessionID, reconnectToken *string,
+	processExited <-chan int,
 ) connectionResult {
 	a.Logger.Info("connecting to relay", "url", a.Config.RelayURL)
 
@@ -203,6 +192,7 @@ func (a *App) runConnection(
 	if err != nil {
 		return connectionResult{err: fmt.Errorf("connect to relay: %w", err)}
 	}
+	defer ws.Close()
 
 	// Send Hello
 	hello := protocol.Hello{
@@ -215,32 +205,27 @@ func (a *App) runConnection(
 		ReconnectToken: *reconnectToken,
 	}
 	if err := ws.Send(appCtx, protocol.TypeHello, hello); err != nil {
-		ws.Close()
 		return connectionResult{err: fmt.Errorf("send hello: %w", err)}
 	}
 
 	// Read Welcome
 	msgType, payload, err := ws.Receive(appCtx)
 	if err != nil {
-		ws.Close()
 		return connectionResult{err: fmt.Errorf("receive welcome: %w", err)}
 	}
 	if msgType == protocol.TypeError {
 		var e protocol.Error
 		protocol.DecodeJSON(payload, &e)
-		ws.Close()
 		return connectionResult{
 			err:        fmt.Errorf("server error: %s: %s", e.Code, e.Message),
 			authFailed: e.Code == "auth_failed",
 		}
 	}
 	if msgType != protocol.TypeWelcome {
-		ws.Close()
 		return connectionResult{err: fmt.Errorf("unexpected message type: 0x%02x", msgType)}
 	}
 	var welcome protocol.Welcome
 	if err := protocol.DecodeJSON(payload, &welcome); err != nil {
-		ws.Close()
 		return connectionResult{err: fmt.Errorf("decode welcome: %w", err)}
 	}
 
@@ -254,11 +239,17 @@ func (a *App) runConnection(
 	}
 	a.Logger.Info("session active", "session_id", welcome.SessionID, "url", welcome.ViewURL)
 
-	// connCtx scoped to this single connection
+	// connCtx scoped to this single connection.
 	connCtx, connCancel := context.WithCancel(appCtx)
 	defer connCancel()
 
 	procDead := make(chan struct{})
+	connLost := make(chan struct{})
+	restartCh := make(chan struct{}, 1)
+	var procDeadOnce sync.Once
+	var connLostOnce sync.Once
+	closeProcDead := func() { procDeadOnce.Do(func() { close(procDead) }) }
+	closeConnLost := func() { connLostOnce.Do(func() { close(connLost) }) }
 
 	// Bridge: process stdout → relay
 	go func() {
@@ -268,7 +259,7 @@ func (a *App) runConnection(
 			if n > 0 {
 				if sendErr := ws.Send(connCtx, protocol.TypeStdout, buf[:n]); sendErr != nil {
 					a.Logger.Debug("send stdout failed", "err", sendErr)
-					connCancel()
+					closeConnLost()
 					return
 				}
 			}
@@ -276,20 +267,28 @@ func (a *App) runConnection(
 				if readErr != io.EOF {
 					a.Logger.Error("read process", "err", readErr)
 				}
-				close(procDead)
-				connCancel()
+				closeProcDead()
 				return
 			}
 		}
 	}()
 
-	// Bridge: relay → process stdin
+	// Secondary exit detection: Wait() catches process exit even if PTY read doesn't EOF
+	go func() {
+		select {
+		case <-processExited:
+			closeProcDead()
+		case <-connCtx.Done():
+		}
+	}()
+
+	// Bridge: relay → process stdin (also handles TypeRestart)
 	go func() {
 		for {
 			mt, pl, recvErr := ws.Receive(connCtx)
 			if recvErr != nil {
 				a.Logger.Debug("ws receive ended", "err", recvErr)
-				connCancel()
+				closeConnLost()
 				return
 			}
 			switch mt {
@@ -311,19 +310,84 @@ func (a *App) runConnection(
 				if err := protocol.DecodeJSON(pl, &vc); err == nil {
 					a.Logger.Info("viewers", "count", vc.Count)
 				}
+			case protocol.TypeRestart:
+				select {
+				case restartCh <- struct{}{}:
+				default:
+				}
 			case protocol.TypePing:
 				ws.Send(connCtx, protocol.TypePong, nil)
 			}
 		}
 	}()
 
-	<-connCtx.Done()
-
+	// Wait for process death OR connection loss (whichever comes first).
 	select {
 	case <-procDead:
-		return connectionResult{processExited: true, exitCode: 0, ws: ws}
-	default:
-		ws.Close()
-		return connectionResult{err: fmt.Errorf("connection lost")}
+		// Process exited — handle ProcessExited/Restart on this connection.
+		exitCode := 0
+		select {
+		case code := <-processExited:
+			exitCode = code
+		default:
+		}
+		return a.handleProcessExited(appCtx, ws, exitCode, restartCh, connLost)
+	case <-connLost:
+		// WebSocket error — connection is dead.
+		// Check if process also died (race between ws error and process exit).
+		select {
+		case <-procDead:
+			exitCode := 0
+			select {
+			case code := <-processExited:
+				exitCode = code
+			default:
+			}
+			return connectionResult{processExited: true, exitCode: exitCode}
+		default:
+			return connectionResult{err: fmt.Errorf("connection lost")}
+		}
+	case <-appCtx.Done():
+		return connectionResult{}
+	}
+}
+
+// handleProcessExited sends ProcessExited to the relay and, in manual restart
+// mode, waits for TypeRestart. The stdin bridge goroutine is still running and
+// will signal restartCh when TypeRestart arrives, so there is only one reader
+// on the websocket at a time.
+func (a *App) handleProcessExited(
+	appCtx context.Context,
+	ws *WSConn,
+	exitCode int,
+	restartCh <-chan struct{},
+	connLost <-chan struct{},
+) connectionResult {
+	switch a.Restart {
+	case "manual":
+		exitPayload := protocol.ProcessExited{ExitCode: exitCode}
+		if err := ws.Send(appCtx, protocol.TypeProcessExited, exitPayload); err != nil {
+			a.Logger.Warn("failed to send process exited", "err", err)
+			return connectionResult{processExited: true, exitCode: exitCode}
+		}
+		fmt.Fprintf(os.Stderr, "Process exited (code %d). Waiting for restart...\n", exitCode)
+		a.Logger.Info("waiting for restart signal", "exit_code", exitCode)
+
+		// Wait for the stdin bridge to receive TypeRestart.
+		select {
+		case <-restartCh:
+			a.Logger.Info("restart signal received")
+			fmt.Fprintf(os.Stderr, "Restart signal received. Restarting process...\n")
+			return connectionResult{processExited: true, exitCode: exitCode, restarted: true}
+		case <-connLost:
+			a.Logger.Info("connection lost while waiting for restart")
+			return connectionResult{processExited: true, exitCode: exitCode}
+		case <-appCtx.Done():
+			return connectionResult{processExited: true, exitCode: exitCode}
+		}
+	case "auto":
+		return connectionResult{processExited: true, exitCode: exitCode}
+	default: // "never" or unset
+		return connectionResult{processExited: true, exitCode: exitCode}
 	}
 }

@@ -3,9 +3,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
+
 	"github.com/UserExistsError/conpty"
 	"golang.org/x/sys/windows"
 )
@@ -20,6 +22,15 @@ func (p *windowsPTY) Close() error                  { return p.cpty.Close() }
 
 func (p *windowsPTY) Resize(cols, rows int) error {
 	return p.cpty.Resize(cols, rows)
+}
+
+func (p *windowsPTY) Pid() int {
+	return p.cpty.Pid()
+}
+
+func (p *windowsPTY) Wait(ctx context.Context) (int, error) {
+	code, err := p.cpty.Wait(ctx)
+	return int(code), err
 }
 
 // getConsoleSize returns the current console width and height.
