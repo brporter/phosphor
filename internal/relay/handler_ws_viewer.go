@@ -99,6 +99,12 @@ func (s *Server) HandleViewerWebSocket(w http.ResponseWriter, r *http.Request) {
 	joinedData, _ := protocol.Encode(protocol.TypeJoined, joined)
 	conn.Write(ctx, websocket.MessageBinary, joinedData)
 
+	// Replay scrollback buffer so the viewer sees prior output
+	if buf := ls.GetScrollback(); len(buf) > 0 {
+		scrollbackMsg, _ := protocol.Encode(protocol.TypeStdout, buf)
+		conn.Write(ctx, websocket.MessageBinary, scrollbackMsg)
+	}
+
 	// Notify CLI of new viewer count
 	ls.NotifyViewerCount(ctx)
 

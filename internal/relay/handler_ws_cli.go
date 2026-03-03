@@ -143,6 +143,10 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 			if err == nil {
 				s.hub.BroadcastOutput(ctx, sessionID, encoded)
 			}
+			// Buffer raw stdout for viewer replay
+			if ls, ok := s.hub.GetLocal(sessionID); ok {
+				ls.AppendScrollback(payload)
+			}
 		case protocol.TypeResize:
 			var sz protocol.Resize
 			if err := protocol.DecodeJSON(payload, &sz); err == nil {

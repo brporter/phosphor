@@ -12,16 +12,19 @@ import (
 
 const maxViewersPerSession = 10
 
+const scrollbackCapacity = 64 * 1024 // 64KB of recent stdout
+
 // LocalSession holds WebSocket connections local to one relay instance.
 type LocalSession struct {
 	sessionID string
 	bus       MessageBus // nil in single-instance mode
 	logger    *slog.Logger
 
-	mu      sync.RWMutex
-	cliConn *websocket.Conn            // nil for viewer-only sessions
-	viewers map[string]*websocket.Conn // viewer ID → conn
-	closed  bool
+	mu         sync.RWMutex
+	cliConn    *websocket.Conn            // nil for viewer-only sessions
+	viewers    map[string]*websocket.Conn // viewer ID → conn
+	closed     bool
+	scrollback []byte // ring buffer of recent stdout for viewer replay
 
 	cancelOutput func() // unsubscribe from output channel
 	cancelInput  func() // unsubscribe from input channel
@@ -172,6 +175,29 @@ func (ls *LocalSession) NotifyViewerCount(ctx context.Context) {
 	ls.SendToCLI(ctx, data)
 }
 
+// AppendScrollback appends raw stdout bytes to the scrollback buffer.
+// Caller must hold ls.mu.Lock().
+func (ls *LocalSession) AppendScrollback(data []byte) {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	ls.scrollback = append(ls.scrollback, data...)
+	if len(ls.scrollback) > scrollbackCapacity {
+		ls.scrollback = ls.scrollback[len(ls.scrollback)-scrollbackCapacity:]
+	}
+}
+
+// GetScrollback returns a copy of the scrollback buffer (or nil if empty).
+func (ls *LocalSession) GetScrollback() []byte {
+	ls.mu.RLock()
+	defer ls.mu.RUnlock()
+	if len(ls.scrollback) == 0 {
+		return nil
+	}
+	buf := make([]byte, len(ls.scrollback))
+	copy(buf, ls.scrollback)
+	return buf
+}
+
 // Close sends TypeEnd to viewers, closes connections, and unsubscribes from bus.
 func (ls *LocalSession) Close() {
 	ls.mu.Lock()
@@ -180,6 +206,7 @@ func (ls *LocalSession) Close() {
 		return
 	}
 	ls.closed = true
+	ls.scrollback = nil
 
 	endMsg, _ := protocol.Encode(protocol.TypeEnd, nil)
 	for _, conn := range ls.viewers {
