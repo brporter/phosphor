@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/brporter/phosphor/internal/protocol"
+	"golang.org/x/term"
 )
 
 // App orchestrates the CLI: connects to the relay, spawns the process, and bridges I/O.
@@ -55,7 +57,7 @@ func (a *App) Run(ctx context.Context) error {
 	var sessionID, reconnectToken string
 
 	for {
-		err := a.runWithProcess(appCtx, &sessionID, &reconnectToken)
+		err := a.runWithProcess(appCtx, appCancel, &sessionID, &reconnectToken)
 		if appCtx.Err() != nil {
 			a.Logger.Info("session ended")
 			return nil
@@ -72,7 +74,7 @@ func (a *App) Run(ctx context.Context) error {
 		switch a.Restart {
 		case "auto":
 			a.Logger.Info("process exited, restarting automatically")
-			fmt.Fprintf(os.Stderr, "Process exited. Restarting...\n")
+			fmt.Fprintf(os.Stderr, "Process exited. Restarting...\r\n")
 		case "manual":
 			// runWithProcess waited for TypeRestart and returned errProcessExited
 			a.Logger.Info("restarting process after manual trigger")
@@ -85,7 +87,7 @@ func (a *App) Run(ctx context.Context) error {
 }
 
 // runWithProcess manages the PTY lifecycle and reconnection loop for a single process.
-func (a *App) runWithProcess(appCtx context.Context, sessionID, reconnectToken *string) error {
+func (a *App) runWithProcess(appCtx context.Context, appCancel context.CancelFunc, sessionID, reconnectToken *string) error {
 	var cols, rows int
 	var proc io.ReadWriteCloser
 	var ptyProc PTYProcess
@@ -104,6 +106,38 @@ func (a *App) runWithProcess(appCtx context.Context, sessionID, reconnectToken *
 		rows = r
 
 		a.Logger.Info("process started", "pid", p.Pid(), "command", strings.Join(a.Command, " "))
+
+		// Enter raw terminal mode so keystrokes pass through to the PTY
+		if fd := int(os.Stdin.Fd()); term.IsTerminal(fd) {
+			oldState, err := term.MakeRaw(fd)
+			if err == nil {
+				defer term.Restore(fd, oldState)
+			} else {
+				a.Logger.Warn("failed to set raw terminal mode", "err", err)
+			}
+		}
+
+		// Local stdin → PTY
+		go func() {
+			buf := make([]byte, 1024)
+			for {
+				n, err := os.Stdin.Read(buf)
+				if n > 0 {
+					proc.Write(buf[:n])
+					// Ctrl+C (0x03) in raw mode: shut down phosphor
+					if bytes.IndexByte(buf[:n], 0x03) >= 0 {
+						appCancel()
+						return
+					}
+				}
+				if err != nil {
+					return
+				}
+			}
+		}()
+
+		// Watch for local terminal resize (SIGWINCH on Unix, no-op on Windows)
+		go watchTerminalResize(appCtx, p)
 
 		go func() {
 			exitCode, waitErr := p.Wait(appCtx)
@@ -146,7 +180,7 @@ func (a *App) runWithProcess(appCtx context.Context, sessionID, reconnectToken *
 
 		// Auth rejected — try browser login once, then retry
 		if result.authFailed && attempt == 0 {
-			fmt.Fprintf(os.Stderr, "Authentication required.\n")
+			fmt.Fprintf(os.Stderr, "Authentication required.\r\n")
 			idToken, err := BrowserLogin(appCtx, a.Config.RelayURL)
 			if err != nil {
 				return fmt.Errorf("login failed: %w", err)
@@ -162,7 +196,7 @@ func (a *App) runWithProcess(appCtx context.Context, sessionID, reconnectToken *
 		// Connection lost — retry with backoff
 		delay := backoffSchedule[min(attempt, len(backoffSchedule)-1)]
 		attempt++
-		fmt.Fprintf(os.Stderr, "Relay disconnected. Reconnecting in %s...\n", delay)
+		fmt.Fprintf(os.Stderr, "Relay disconnected. Reconnecting in %s...\r\n", delay)
 		a.Logger.Info("relay disconnected, will retry", "delay", delay, "attempt", attempt)
 
 		select {
@@ -233,9 +267,9 @@ func (a *App) runConnection(
 	*reconnectToken = welcome.ReconnectToken
 
 	if hello.SessionID == "" {
-		fmt.Fprintf(os.Stderr, "Session live: %s\n", welcome.ViewURL)
+		fmt.Fprintf(os.Stderr, "Session live: %s\r\n", welcome.ViewURL)
 	} else {
-		fmt.Fprintf(os.Stderr, "Reconnected: %s\n", welcome.ViewURL)
+		fmt.Fprintf(os.Stderr, "Reconnected: %s\r\n", welcome.ViewURL)
 	}
 	a.Logger.Info("session active", "session_id", welcome.SessionID, "url", welcome.ViewURL)
 
@@ -254,12 +288,15 @@ func (a *App) runConnection(
 	closeConnLost := func() { connLostOnce.Do(func() { close(connLost) }) }
 	closeDestroyed := func() { destroyedOnce.Do(func() { close(sessionDestroyed) }) }
 
-	// Bridge: process stdout → relay
+	// Bridge: process stdout → local terminal + relay
 	go func() {
 		buf := make([]byte, 32*1024)
 		for {
 			n, readErr := proc.Read(buf)
 			if n > 0 {
+				// Echo to local terminal
+				os.Stdout.Write(buf[:n])
+
 				if sendErr := ws.Send(connCtx, protocol.TypeStdout, buf[:n]); sendErr != nil {
 					a.Logger.Debug("send stdout failed", "err", sendErr)
 					closeConnLost()
@@ -320,7 +357,7 @@ func (a *App) runConnection(
 				}
 			case protocol.TypeEnd:
 				a.Logger.Info("session destroyed by owner")
-				fmt.Fprintf(os.Stderr, "Session destroyed by owner. Shutting down.\n")
+				fmt.Fprintf(os.Stderr, "Session destroyed by owner. Shutting down.\r\n")
 				closeDestroyed()
 				return
 			case protocol.TypePing:
@@ -382,14 +419,14 @@ func (a *App) handleProcessExited(
 			a.Logger.Warn("failed to send process exited", "err", err)
 			return connectionResult{processExited: true, exitCode: exitCode}
 		}
-		fmt.Fprintf(os.Stderr, "Process exited (code %d). Waiting for restart...\n", exitCode)
+		fmt.Fprintf(os.Stderr, "Process exited (code %d). Waiting for restart...\r\n", exitCode)
 		a.Logger.Info("waiting for restart signal", "exit_code", exitCode)
 
 		// Wait for the stdin bridge to receive TypeRestart.
 		select {
 		case <-restartCh:
 			a.Logger.Info("restart signal received")
-			fmt.Fprintf(os.Stderr, "Restart signal received. Restarting process...\n")
+			fmt.Fprintf(os.Stderr, "Restart signal received. Restarting process...\r\n")
 			return connectionResult{processExited: true, exitCode: exitCode, restarted: true}
 		case <-sessionDestroyed:
 			a.Logger.Info("session destroyed while waiting for restart")

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -15,6 +16,8 @@ func main() {
 	var token string
 	var restart string
 	var logout bool
+	var logFile string
+	var debug bool
 
 	rootCmd := &cobra.Command{
 		Use:   "phosphor [-- command args...]",
@@ -36,7 +39,41 @@ func main() {
 				return nil
 			}
 
-			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+			// Configure logger based on --log and --debug flags
+			var logWriter io.Writer
+			var logLevel slog.Level
+			var logFileHandle *os.File
+
+			switch {
+			case logFile != "" && debug:
+				f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+				if err != nil {
+					return fmt.Errorf("open log file: %w", err)
+				}
+				logFileHandle = f
+				logWriter = io.MultiWriter(f, os.Stderr)
+				logLevel = slog.LevelDebug
+			case logFile != "":
+				f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+				if err != nil {
+					return fmt.Errorf("open log file: %w", err)
+				}
+				logFileHandle = f
+				logWriter = f
+				logLevel = slog.LevelInfo
+			case debug:
+				logWriter = os.Stderr
+				logLevel = slog.LevelDebug
+			default:
+				logWriter = io.Discard
+				logLevel = slog.LevelInfo
+			}
+
+			if logFileHandle != nil {
+				defer logFileHandle.Close()
+			}
+
+			logger := slog.New(slog.NewTextHandler(logWriter, &slog.HandlerOptions{Level: logLevel}))
 
 			cfg := cli.DefaultConfig()
 			if relayURL != "" {
@@ -92,6 +129,8 @@ func main() {
 	rootCmd.Flags().StringVar(&token, "token", "", "Auth token (default: read from cache)")
 	rootCmd.Flags().StringVar(&restart, "restart", "manual", "Process restart mode: manual, auto, never")
 	rootCmd.Flags().BoolVar(&logout, "logout", false, "Clear cached authentication tokens and exit")
+	rootCmd.Flags().StringVar(&logFile, "log", "", "Write log messages to file")
+	rootCmd.Flags().BoolVar(&debug, "debug", false, "Enable debug logging to stderr")
 
 	var provider string
 	var useDeviceCode bool
