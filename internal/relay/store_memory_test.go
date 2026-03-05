@@ -190,3 +190,79 @@ func TestMemorySessionStore_ExpiryCallbackFires(t *testing.T) {
 		t.Fatal("expiry callback did not fire within timeout")
 	}
 }
+
+func TestMemoryStore_SetProcessRunning(t *testing.T) {
+	store := NewMemorySessionStore()
+	ctx := context.Background()
+
+	store.Register(ctx, SessionInfo{
+		ID:             "s1",
+		OwnerProvider:  "google",
+		OwnerSub:       "u1",
+		Lazy:           true,
+		ProcessRunning: false,
+	})
+
+	// Set ProcessRunning to true
+	if err := store.SetProcessRunning(ctx, "s1", true); err != nil {
+		t.Fatalf("SetProcessRunning(true) error: %v", err)
+	}
+
+	got, ok, err := store.Get(ctx, "s1")
+	if err != nil {
+		t.Fatalf("Get error: %v", err)
+	}
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if !got.ProcessRunning {
+		t.Error("ProcessRunning = false, want true")
+	}
+
+	// Set ProcessRunning back to false
+	if err := store.SetProcessRunning(ctx, "s1", false); err != nil {
+		t.Fatalf("SetProcessRunning(false) error: %v", err)
+	}
+
+	got, ok, err = store.Get(ctx, "s1")
+	if err != nil {
+		t.Fatalf("Get error: %v", err)
+	}
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if got.ProcessRunning {
+		t.Error("ProcessRunning = true, want false")
+	}
+}
+
+func TestMemoryStore_LazyDelegateFields(t *testing.T) {
+	store := NewMemorySessionStore()
+	ctx := context.Background()
+
+	store.Register(ctx, SessionInfo{
+		ID:              "s1",
+		OwnerProvider:   "google",
+		OwnerSub:        "u1",
+		Lazy:            true,
+		DelegateFor:     "user@example.com",
+		ServiceIdentity: "svc:daemon",
+	})
+
+	got, ok, err := store.Get(ctx, "s1")
+	if err != nil {
+		t.Fatalf("Get error: %v", err)
+	}
+	if !ok {
+		t.Fatal("session not found")
+	}
+	if !got.Lazy {
+		t.Error("Lazy = false, want true")
+	}
+	if got.DelegateFor != "user@example.com" {
+		t.Errorf("DelegateFor = %q, want user@example.com", got.DelegateFor)
+	}
+	if got.ServiceIdentity != "svc:daemon" {
+		t.Errorf("ServiceIdentity = %q, want svc:daemon", got.ServiceIdentity)
+	}
+}
