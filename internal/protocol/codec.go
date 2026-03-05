@@ -22,7 +22,7 @@ func Encode(msgType byte, payload any) ([]byte, error) {
 		msg[0] = msgType
 		copy(msg[1:], data)
 		return msg, nil
-	case TypePing, TypePong, TypeEnd:
+	case TypePing, TypePong, TypeEnd, TypeSpawnRequest:
 		return []byte{msgType}, nil
 	default:
 		data, err := json.Marshal(payload)

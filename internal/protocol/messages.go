@@ -16,6 +16,8 @@ const (
 	TypeRestart       byte = 0x18
 	TypeViewerCount   byte = 0x20
 	TypeMode          byte = 0x21
+	TypeSpawnRequest  byte = 0x22
+	TypeSpawnComplete byte = 0x23
 	TypePing          byte = 0x30
 	TypePong          byte = 0x31
 )
@@ -27,6 +29,9 @@ type Hello struct {
 	Cols    int    `json:"cols"`
 	Rows    int    `json:"rows"`
 	Command string `json:"command"`
+
+	Lazy        bool   `json:"lazy,omitempty"`
+	DelegateFor string `json:"delegate_for,omitempty"`
 
 	// Set on reconnect attempts
 	SessionID      string `json:"session_id,omitempty"`
@@ -84,4 +89,10 @@ type Reconnect struct {
 // ProcessExited is sent by the CLI when the subprocess exits.
 type ProcessExited struct {
 	ExitCode int `json:"exit_code"`
+}
+
+// SpawnComplete is sent by the daemon to the relay after spawning a shell.
+type SpawnComplete struct {
+	Cols int `json:"cols"`
+	Rows int `json:"rows"`
 }
