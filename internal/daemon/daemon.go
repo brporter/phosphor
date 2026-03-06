@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/fsnotify/fsnotify"
 
 	"github.com/brporter/phosphor/internal/protocol"
 )
@@ -51,30 +52,132 @@ type managedSession struct {
 	mapping        Mapping
 	sessionID      string
 	reconnectToken string
+	cancel         context.CancelFunc
 
 	mu      sync.Mutex
 	proc    PTYProcess
 	stdinCh chan []byte
 }
 
-// Run starts one goroutine per mapping and waits for all to finish when ctx is cancelled.
+// Run starts one goroutine per mapping, watches the config file for changes,
+// and waits for all to finish when ctx is cancelled.
 func (d *Daemon) Run(ctx context.Context) {
 	d.mu.Lock()
 	d.sessions = make(map[string]*managedSession)
 	d.mu.Unlock()
 
 	var wg sync.WaitGroup
-	for _, m := range d.Config.Mappings {
-		ms := &managedSession{mapping: m}
+
+	d.startMappings(ctx, &wg, d.Config.Mappings)
+
+	// Start config watcher in background
+	if d.ConfigPath != "" {
+		go d.watchConfig(ctx, &wg)
+	}
+
+	wg.Wait()
+}
+
+// startMappings launches a runMapping goroutine for each mapping.
+func (d *Daemon) startMappings(ctx context.Context, wg *sync.WaitGroup, mappings []Mapping) {
+	for _, m := range mappings {
+		mCtx, mCancel := context.WithCancel(ctx)
+		ms := &managedSession{mapping: m, cancel: mCancel}
 		d.setSession(m.Identity, ms)
 
 		wg.Add(1)
 		go func(mapping Mapping) {
 			defer wg.Done()
-			d.runMapping(ctx, mapping)
+			d.runMapping(mCtx, mapping)
 		}(m)
 	}
-	wg.Wait()
+}
+
+// watchConfig watches the config file for changes and adds/removes mappings.
+func (d *Daemon) watchConfig(ctx context.Context, wg *sync.WaitGroup) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		d.Logger.Warn("config watch unavailable", "err", err)
+		return
+	}
+	defer watcher.Close()
+
+	if err := watcher.Add(d.ConfigPath); err != nil {
+		d.Logger.Warn("failed to watch config", "path", d.ConfigPath, "err", err)
+		return
+	}
+
+	d.Logger.Info("watching config file", "path", d.ConfigPath)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return
+			}
+			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
+				d.reloadConfig(ctx, wg)
+			}
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return
+			}
+			d.Logger.Warn("config watch error", "err", err)
+		}
+	}
+}
+
+// reloadConfig reads the config file and diffs mappings.
+func (d *Daemon) reloadConfig(ctx context.Context, wg *sync.WaitGroup) {
+	newCfg, err := ReadConfig(d.ConfigPath)
+	if err != nil {
+		d.Logger.Error("reload config failed", "err", err)
+		return
+	}
+
+	// Build sets of current and new identities
+	newMap := make(map[string]Mapping)
+	for _, m := range newCfg.Mappings {
+		newMap[m.Identity] = m
+	}
+
+	oldMap := make(map[string]Mapping)
+	d.mu.Lock()
+	for id, ms := range d.sessions {
+		oldMap[id] = ms.mapping
+	}
+	d.mu.Unlock()
+
+	// Stop removed mappings
+	for id := range oldMap {
+		if _, exists := newMap[id]; !exists {
+			d.Logger.Info("removing mapping", "identity", id)
+			d.mu.Lock()
+			if ms, ok := d.sessions[id]; ok {
+				ms.cancel()
+				delete(d.sessions, id)
+			}
+			d.mu.Unlock()
+		}
+	}
+
+	// Start new mappings
+	var toStart []Mapping
+	for id, m := range newMap {
+		if _, exists := oldMap[id]; !exists {
+			d.Logger.Info("adding mapping", "identity", id)
+			toStart = append(toStart, m)
+		}
+	}
+
+	if len(toStart) > 0 {
+		d.startMappings(ctx, wg, toStart)
+	}
+
+	d.Config = newCfg
+	d.Logger.Info("config reloaded", "mappings", len(newCfg.Mappings))
 }
 
 // runMapping is the reconnect loop for a single mapping with exponential backoff.

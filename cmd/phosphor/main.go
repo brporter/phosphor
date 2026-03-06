@@ -160,7 +160,7 @@ func main() {
 		},
 	}
 
-	rootCmd.AddCommand(loginCmd, logoutCmd)
+	rootCmd.AddCommand(loginCmd, logoutCmd, newDaemonCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
