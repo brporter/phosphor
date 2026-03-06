@@ -368,6 +368,159 @@ func TestHandleViewerWebSocket_NotOwner(t *testing.T) {
 	}
 }
 
+// --- TestHandleCLIWebSocket_LazySession ---
+
+// TestHandleCLIWebSocket_LazySession verifies that a Hello with Lazy=true creates
+// a session with Lazy=true and ProcessRunning=false.
+func TestHandleCLIWebSocket_LazySession(t *testing.T) {
+	srv, ts := newWSTestServer(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn := dialCLI(ctx, t, ts)
+
+	hello := protocol.Hello{Token: "", Mode: "pty", Cols: 80, Rows: 24, Command: "bash", Lazy: true}
+	if err := wsSend(ctx, conn, protocol.TypeHello, hello); err != nil {
+		t.Fatal("send Hello:", err)
+	}
+
+	mt, payload := wsRecv(ctx, t, conn)
+	if mt != protocol.TypeWelcome {
+		t.Fatalf("expected TypeWelcome (0x%02x), got 0x%02x", protocol.TypeWelcome, mt)
+	}
+
+	var welcome protocol.Welcome
+	if err := protocol.DecodeJSON(payload, &welcome); err != nil {
+		t.Fatal("decode Welcome:", err)
+	}
+
+	info, ok, err := srv.hub.Get(ctx, welcome.SessionID)
+	if err != nil {
+		t.Fatalf("hub.Get error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("session %q not found in hub", welcome.SessionID)
+	}
+	if !info.Lazy {
+		t.Error("expected session Lazy=true, got false")
+	}
+	if info.ProcessRunning {
+		t.Error("expected session ProcessRunning=false for lazy session, got true")
+	}
+}
+
+// --- TestHandleCLIWebSocket_DelegateFor ---
+
+// TestHandleCLIWebSocket_DelegateFor verifies that a Hello with DelegateFor set
+// creates a session with delegated ownership.
+func TestHandleCLIWebSocket_DelegateFor(t *testing.T) {
+	srv, ts := newWSTestServer(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn := dialCLI(ctx, t, ts)
+
+	hello := protocol.Hello{Token: "", Mode: "pty", Cols: 80, Rows: 24, Command: "bash", Lazy: true, DelegateFor: "user@example.com"}
+	if err := wsSend(ctx, conn, protocol.TypeHello, hello); err != nil {
+		t.Fatal("send Hello:", err)
+	}
+
+	mt, payload := wsRecv(ctx, t, conn)
+	if mt != protocol.TypeWelcome {
+		t.Fatalf("expected TypeWelcome (0x%02x), got 0x%02x", protocol.TypeWelcome, mt)
+	}
+
+	var welcome protocol.Welcome
+	if err := protocol.DecodeJSON(payload, &welcome); err != nil {
+		t.Fatal("decode Welcome:", err)
+	}
+
+	info, ok, err := srv.hub.Get(ctx, welcome.SessionID)
+	if err != nil {
+		t.Fatalf("hub.Get error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("session %q not found in hub", welcome.SessionID)
+	}
+	if info.OwnerProvider != "delegated" {
+		t.Errorf("OwnerProvider = %q, want delegated", info.OwnerProvider)
+	}
+	if info.OwnerSub != "user@example.com" {
+		t.Errorf("OwnerSub = %q, want user@example.com", info.OwnerSub)
+	}
+	if info.DelegateFor != "user@example.com" {
+		t.Errorf("DelegateFor = %q, want user@example.com", info.DelegateFor)
+	}
+	if info.ServiceIdentity == "" {
+		t.Error("ServiceIdentity should not be empty for delegated session")
+	}
+	if !strings.Contains(info.ServiceIdentity, ":") {
+		t.Errorf("ServiceIdentity = %q, expected format provider:sub", info.ServiceIdentity)
+	}
+}
+
+// --- TestHandleCLIWebSocket_SpawnComplete ---
+
+// TestHandleCLIWebSocket_SpawnComplete verifies that after creating a lazy session,
+// sending a SpawnComplete message sets ProcessRunning=true and updates dimensions.
+func TestHandleCLIWebSocket_SpawnComplete(t *testing.T) {
+	srv, ts := newWSTestServer(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn := dialCLI(ctx, t, ts)
+
+	hello := protocol.Hello{Token: "", Mode: "pty", Cols: 80, Rows: 24, Command: "bash", Lazy: true}
+	if err := wsSend(ctx, conn, protocol.TypeHello, hello); err != nil {
+		t.Fatal("send Hello:", err)
+	}
+
+	mt, payload := wsRecv(ctx, t, conn)
+	if mt != protocol.TypeWelcome {
+		t.Fatalf("expected TypeWelcome (0x%02x), got 0x%02x", protocol.TypeWelcome, mt)
+	}
+
+	var welcome protocol.Welcome
+	if err := protocol.DecodeJSON(payload, &welcome); err != nil {
+		t.Fatal("decode Welcome:", err)
+	}
+
+	// Verify initially ProcessRunning=false
+	info, ok, _ := srv.hub.Get(ctx, welcome.SessionID)
+	if !ok {
+		t.Fatalf("session %q not found", welcome.SessionID)
+	}
+	if info.ProcessRunning {
+		t.Fatal("expected ProcessRunning=false before SpawnComplete")
+	}
+
+	// Send SpawnComplete
+	sc := protocol.SpawnComplete{Cols: 120, Rows: 40}
+	if err := wsSend(ctx, conn, protocol.TypeSpawnComplete, sc); err != nil {
+		t.Fatal("send SpawnComplete:", err)
+	}
+
+	// Give the read loop a moment to process
+	time.Sleep(100 * time.Millisecond)
+
+	info, ok, _ = srv.hub.Get(ctx, welcome.SessionID)
+	if !ok {
+		t.Fatalf("session %q not found after SpawnComplete", welcome.SessionID)
+	}
+	if !info.ProcessRunning {
+		t.Error("expected ProcessRunning=true after SpawnComplete")
+	}
+	if info.Cols != 120 {
+		t.Errorf("Cols = %d, want 120", info.Cols)
+	}
+	if info.Rows != 40 {
+		t.Errorf("Rows = %d, want 40", info.Rows)
+	}
+}
+
 // --- TestHandleCLIWebSocket_Disconnect ---
 
 // TestHandleCLIWebSocket_Disconnect verifies that closing the CLI WebSocket
