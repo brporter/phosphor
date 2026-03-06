@@ -65,7 +65,12 @@ func (s *Server) HandleViewerWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify ownership: viewer must be the session owner
-	if viewerProvider != info.OwnerProvider || viewerSub != info.OwnerSub {
+	isOwner := viewerProvider == info.OwnerProvider && viewerSub == info.OwnerSub
+	// For delegated sessions, match viewer by delegated identity
+	if !isOwner && info.DelegateFor != "" {
+		isOwner = viewerSub == info.DelegateFor
+	}
+	if !isOwner {
 		sendError(ctx, conn, "forbidden", "you do not own this session")
 		return
 	}
