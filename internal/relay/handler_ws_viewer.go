@@ -108,8 +108,13 @@ func (s *Server) HandleViewerWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Notify CLI of new viewer count
 	ls.NotifyViewerCount(ctx)
 
-	// If process has exited, trigger a restart
-	if info.ProcessExited {
+	// For lazy sessions that haven't spawned yet, send SpawnRequest to CLI
+	if info.Lazy && !info.ProcessRunning && !info.ProcessExited {
+		spawnData, _ := protocol.Encode(protocol.TypeSpawnRequest, nil)
+		s.hub.SendInput(ctx, join.SessionID, spawnData)
+		s.logger.Info("sent spawn request for lazy session", "session", sessionID)
+	} else if info.ProcessExited {
+		// If process has exited, trigger a restart
 		s.hub.RestartProcess(ctx, join.SessionID)
 		s.logger.Info("viewer triggered process restart", "session", sessionID)
 	}

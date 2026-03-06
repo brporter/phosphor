@@ -583,3 +583,67 @@ func TestHandleCLIWebSocket_Disconnect(t *testing.T) {
 
 	t.Errorf("session %q not marked as disconnected after CLI disconnect", sessionID)
 }
+
+// --- TestHandleViewerWebSocket_LazySpawnRequest ---
+
+// TestHandleViewerWebSocket_LazySpawnRequest verifies that when a viewer joins a
+// lazy session that hasn't spawned yet, the relay sends TypeSpawnRequest to the CLI.
+func TestHandleViewerWebSocket_LazySpawnRequest(t *testing.T) {
+	_, ts := newWSTestServer(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Step 1: create a lazy CLI session.
+	cliConn := dialCLI(ctx, t, ts)
+
+	hello := protocol.Hello{Token: "", Mode: "pty", Cols: 80, Rows: 24, Command: "bash", Lazy: true}
+	if err := wsSend(ctx, cliConn, protocol.TypeHello, hello); err != nil {
+		t.Fatal("send Hello:", err)
+	}
+
+	mt, payload := wsRecv(ctx, t, cliConn)
+	if mt != protocol.TypeWelcome {
+		t.Fatalf("expected TypeWelcome, got 0x%02x", mt)
+	}
+	var welcome protocol.Welcome
+	if err := protocol.DecodeJSON(payload, &welcome); err != nil {
+		t.Fatal("decode Welcome:", err)
+	}
+	sessionID := welcome.SessionID
+
+	// Step 2: dial a viewer WebSocket.
+	viewerConn, _, err := websocket.Dial(ctx, wsURL(ts, "/ws/view/"+sessionID), &websocket.DialOptions{
+		Subprotocols: []string{"phosphor"},
+	})
+	if err != nil {
+		t.Fatal("dial /ws/view:", err)
+	}
+	defer viewerConn.CloseNow()
+
+	// Send Join with same identity (empty token = dev/anonymous).
+	join := protocol.Join{Token: "", SessionID: sessionID}
+	if err := wsSend(ctx, viewerConn, protocol.TypeJoin, join); err != nil {
+		t.Fatal("send Join:", err)
+	}
+
+	// Viewer should receive TypeJoined.
+	vmt, _ := wsRecv(ctx, t, viewerConn)
+	if vmt != protocol.TypeJoined {
+		t.Fatalf("expected TypeJoined (0x%02x), got 0x%02x", protocol.TypeJoined, vmt)
+	}
+
+	// CLI should receive TypeSpawnRequest (may need to drain TypeViewerCount first).
+	// Loop through up to 3 received messages looking for TypeSpawnRequest.
+	foundSpawnRequest := false
+	for i := 0; i < 3; i++ {
+		cliMT, _ := wsRecv(ctx, t, cliConn)
+		if cliMT == protocol.TypeSpawnRequest {
+			foundSpawnRequest = true
+			break
+		}
+	}
+	if !foundSpawnRequest {
+		t.Error("CLI did not receive TypeSpawnRequest after viewer joined lazy session")
+	}
+}
