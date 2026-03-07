@@ -12,6 +12,7 @@ function renderWithAuth(ui: React.ReactElement, authOverrides = {}) {
   const defaultAuth = {
     user: null,
     isLoading: false,
+    providers: ["microsoft", "google", "apple"],
     login: vi.fn(),
     logout: vi.fn(),
     getToken: vi.fn(() => null),
@@ -48,6 +49,18 @@ describe("ProtectedRoute", () => {
     expect(screen.getByText("sign in with Google")).toBeInTheDocument();
     expect(screen.getByText("sign in with Apple")).toBeInTheDocument();
     expect(screen.queryByText("Protected content")).not.toBeInTheDocument();
+  });
+
+  it("shows dev mode button when dev provider is available", () => {
+    renderWithAuth(
+      <ProtectedRoute>
+        <div>Protected content</div>
+      </ProtectedRoute>,
+      { user: null, providers: ["dev"] }
+    );
+
+    expect(screen.getByText("dev mode")).toBeInTheDocument();
+    expect(screen.queryByText("sign in with Microsoft")).not.toBeInTheDocument();
   });
 
   it("renders children when authenticated", () => {

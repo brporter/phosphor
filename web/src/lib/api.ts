@@ -2,6 +2,18 @@ import type { SessionData } from "../components/SessionCard";
 
 const BASE = "";
 
+export interface AuthConfig {
+  providers: string[];
+}
+
+export async function fetchAuthConfig(): Promise<AuthConfig> {
+  const res = await fetch(`${BASE}/api/auth/config`);
+  if (!res.ok) {
+    return { providers: [] };
+  }
+  return res.json() as Promise<AuthConfig>;
+}
+
 export async function destroySession(id: string, token: string | null): Promise<void> {
   const headers: Record<string, string> = {};
   if (token) {

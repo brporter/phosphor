@@ -2,7 +2,7 @@
   <configuration default="false" name="phosphor" type="GoApplicationRunConfiguration" factoryName="Go Application">
     <module name="phosphor" />
     <working_directory value="$PROJECT_DIR$" />
-    <parameters value="--relay ws://localhost:8080 -- powershell" />
+    <parameters value="--relay ws://localhost:8080 -- bash" />
     <kind value="DIRECTORY" />
     <package value="github.com/brporter/phosphor" />
     <directory value="$PROJECT_DIR$/cmd/phosphor" />

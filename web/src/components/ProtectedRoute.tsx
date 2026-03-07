@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { useAuth } from "../auth/useAuth";
+import { ProviderButtons } from "./ProviderButtons";
 
 export function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { user, isLoading, login } = useAuth();
+  const { user, isLoading, providers, login } = useAuth();
 
   if (isLoading) {
     return (
@@ -52,20 +53,7 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
         <p style={{ color: "var(--text)" }}>
           Sign in to view your terminal sessions
         </p>
-        <div style={{ display: "flex", gap: 12 }}>
-          <button
-            className="btn-primary"
-            onClick={() => void login("microsoft")}
-          >
-            sign in with Microsoft
-          </button>
-          <button onClick={() => void login("google")}>
-            sign in with Google
-          </button>
-          <button onClick={() => void login("apple")}>
-            sign in with Apple
-          </button>
-        </div>
+        <ProviderButtons providers={providers} login={login} />
       </div>
     );
   }

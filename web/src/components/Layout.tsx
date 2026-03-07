@@ -1,8 +1,9 @@
 import { Outlet, Link } from "react-router";
 import { useAuth } from "../auth/useAuth";
+import { ProviderButtons } from "./ProviderButtons";
 
 export function Layout() {
-  const { user, login, logout } = useAuth();
+  const { user, providers, login, logout } = useAuth();
 
   return (
     <div
@@ -54,16 +55,7 @@ export function Layout() {
               <button onClick={() => void logout()}>logout</button>
             </>
           ) : (
-            <>
-              <button
-                className="btn-primary"
-                onClick={() => void login("microsoft")}
-              >
-                sign in with Microsoft
-              </button>
-              <button onClick={() => void login("google")}>Google</button>
-              <button onClick={() => void login("apple")}>Apple</button>
-            </>
+            <ProviderButtons providers={providers} login={login} />
           )}
         </div>
       </header>

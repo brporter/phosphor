@@ -35,6 +35,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.HandleDestroySession)
 
 	// Auth flow endpoints
+	mux.HandleFunc("GET /api/auth/config", s.HandleAuthConfig)
 	mux.HandleFunc("POST /api/auth/login", s.HandleAuthLogin)
 	mux.HandleFunc("GET /api/auth/authorize", s.HandleAuthAuthorize)
 	mux.HandleFunc("GET /api/auth/callback", s.HandleAuthCallback)

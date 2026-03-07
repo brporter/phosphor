@@ -27,8 +27,20 @@ function AuthConsumer() {
 
 const mockFetch = vi.fn();
 
+const authConfigResponse = {
+  ok: true,
+  json: async () => ({ providers: ["microsoft", "google", "apple"] }),
+};
+
 beforeEach(() => {
   vi.stubGlobal("fetch", mockFetch);
+  // Default: fetchAuthConfig returns providers; tests can override with mockFetch calls.
+  mockFetch.mockImplementation((url: string) => {
+    if (typeof url === "string" && url.includes("/api/auth/config")) {
+      return Promise.resolve(authConfigResponse);
+    }
+    return Promise.resolve({ ok: false, json: async () => ({}) });
+  });
   localStorage.clear();
   Object.defineProperty(window, "location", {
     value: { href: "" },
@@ -121,12 +133,18 @@ describe("AuthProvider", () => {
   });
 
   it("calls fetch with POST /api/auth/login, saves session_id, and sets location.href on login", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        auth_url: "https://login.example.com/oauth",
-        session_id: "test-session-abc",
-      }),
+    const origImpl = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation((url: string, opts?: RequestInit) => {
+      if (opts?.method === "POST" && typeof url === "string" && url.includes("/api/auth/login")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            auth_url: "https://login.example.com/oauth",
+            session_id: "test-session-abc",
+          }),
+        });
+      }
+      return origImpl(url, opts);
     });
 
     render(
@@ -216,12 +234,18 @@ describe("AuthProvider", () => {
       exp: futureExp,
     });
 
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        status: "complete",
-        id_token: token,
-      }),
+    const origImpl = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation((url: string, opts?: RequestInit) => {
+      if (typeof url === "string" && url.includes("/api/auth/poll")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: "complete",
+            id_token: token,
+          }),
+        });
+      }
+      return origImpl(url, opts);
     });
 
     render(
