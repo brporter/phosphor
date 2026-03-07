@@ -4,6 +4,7 @@ struct SessionListView: View {
     let viewModel: SessionListViewModel
     let auth: AuthViewModel
     @State private var showSettings = false
+    @State private var sessionToDestroy: SessionData?
 
     var body: some View {
         ZStack {
@@ -43,6 +44,26 @@ struct SessionListView: View {
             }
             .preferredColorScheme(.dark)
         }
+        .confirmationDialog(
+            "Destroy Session",
+            isPresented: Binding(
+                get: { sessionToDestroy != nil },
+                set: { if !$0 { sessionToDestroy = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Destroy Session", role: .destructive) {
+                if let session = sessionToDestroy {
+                    Task { await viewModel.destroySession(id: session.id) }
+                }
+                sessionToDestroy = nil
+            }
+            Button("Cancel", role: .cancel) {
+                sessionToDestroy = nil
+            }
+        } message: {
+            Text("This will permanently terminate the session and kill the remote process. You will need to re-run phosphor to start a new session.")
+        }
         .refreshable {
             await viewModel.refresh()
         }
@@ -55,18 +76,24 @@ struct SessionListView: View {
     }
 
     private var sessionList: some View {
-        ScrollView {
-            LazyVStack(spacing: 8) {
-                ForEach(viewModel.sessions) { session in
-                    NavigationLink(value: session.id) {
-                        SessionCardView(session: session)
+        List {
+            ForEach(viewModel.sessions) { session in
+                NavigationLink(value: session.id) {
+                    SessionCardView(session: session)
+                }
+                .listRowBackground(PhosphorTheme.background)
+                .listRowSeparator(.hidden)
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) {
+                        sessionToDestroy = session
+                    } label: {
+                        Label("Destroy", systemImage: "trash")
                     }
-                    .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal)
-            .padding(.top, 8)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
     }
 
     private var emptyState: some View {

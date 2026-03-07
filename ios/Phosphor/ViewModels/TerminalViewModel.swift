@@ -70,6 +70,10 @@ final class TerminalViewModel {
         wsManager.sendResize(cols: cols, rows: rows)
     }
 
+    func sendRestart() {
+        wsManager.sendRestart()
+    }
+
     @MainActor
     private func handleEvent(_ event: WebSocketEvent) {
         switch event {

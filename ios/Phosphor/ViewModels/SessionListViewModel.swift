@@ -35,6 +35,23 @@ final class SessionListViewModel {
     }
 
     @MainActor
+    func destroySession(id: String) async {
+        guard let token = auth.getToken() else { return }
+
+        do {
+            try await APIClient.destroySession(
+                baseURL: relayURL,
+                id: id,
+                token: token
+            )
+        } catch {
+            // Session may already be gone
+        }
+
+        await refresh()
+    }
+
+    @MainActor
     func refresh() async {
         guard let token = auth.getToken() else {
             sessions = []

@@ -80,6 +80,11 @@ final class WebSocketManager: NSObject, @unchecked Sendable {
         webSocketTask?.send(.data(message)) { _ in }
     }
 
+    func sendRestart() {
+        let message = ProtocolCodec.encode(type: .restart)
+        webSocketTask?.send(.data(message)) { _ in }
+    }
+
     func disconnect() {
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         webSocketTask = nil

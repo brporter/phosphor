@@ -66,7 +66,7 @@ struct TerminalContainerView: View {
             if let token = auth.getToken() {
                 viewModel.connect(sessionId: sessionId, token: token)
                 viewModel.onProcessExited = { code in
-                    let message = "\r\n\u{1B}[1;33m[Process exited (code \(code)). Tap session in list to restart.]\u{1B}[0m\r\n"
+                    let message = "\r\n\u{1B}[1;33m[Process exited (code \(code))]\u{1B}[0m\r\n"
                     if let data = message.data(using: .utf8) {
                         viewModel.onStdout?(data)
                     }
@@ -115,9 +115,25 @@ struct TerminalContainerView: View {
             }
 
             if let exitCode = viewModel.processExitCode {
-                Text("process exited (\(exitCode))")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(PhosphorTheme.amber)
+                HStack(spacing: 8) {
+                    Text("exited (\(exitCode))")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(PhosphorTheme.amber)
+
+                    Button {
+                        viewModel.sendRestart()
+                    } label: {
+                        Text("restart")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(PhosphorTheme.green)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .strokeBorder(PhosphorTheme.green, lineWidth: 1)
+                            )
+                    }
+                }
             } else {
                 Text(viewModel.connectionState.rawValue)
                     .font(.system(size: 10, design: .monospaced))
