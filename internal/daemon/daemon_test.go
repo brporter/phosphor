@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
@@ -98,6 +99,25 @@ func TestForwardStdinNoProc(t *testing.T) {
 	// Should not panic even with no stdinCh
 	d.forwardStdin("test@example.com", []byte("hello"))
 	d.forwardStdin("missing@example.com", []byte("hello"))
+}
+
+func TestIsAuthError(t *testing.T) {
+	tests := []struct {
+		err  error
+		want bool
+	}{
+		{fmt.Errorf("server error: auth_failed: bad token"), true},
+		{fmt.Errorf("server error: invalid_token: expired"), true},
+		{fmt.Errorf("dial ws://localhost:8080/ws/cli: connection refused"), false},
+		{fmt.Errorf("receive welcome: EOF"), false},
+		{nil, false},
+	}
+	for _, tt := range tests {
+		got := isAuthError(tt.err)
+		if got != tt.want {
+			t.Errorf("isAuthError(%v) = %v, want %v", tt.err, got, tt.want)
+		}
+	}
 }
 
 func TestResizePTYNoProc(t *testing.T) {

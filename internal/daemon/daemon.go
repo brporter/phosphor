@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -180,9 +181,22 @@ func (d *Daemon) reloadConfig(ctx context.Context, wg *sync.WaitGroup) {
 	d.Logger.Info("config reloaded", "mappings", len(newCfg.Mappings))
 }
 
+// isAuthError returns true if the error indicates an authentication failure.
+func isAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "server error: auth_failed") ||
+		strings.Contains(msg, "server error: invalid_token")
+}
+
 // runMapping is the reconnect loop for a single mapping with exponential backoff.
 func (d *Daemon) runMapping(ctx context.Context, mapping Mapping) {
 	attempt := 0
+	authFailures := 0
+	const maxAuthFailures = 3
+
 	for {
 		if ctx.Err() != nil {
 			return
@@ -194,6 +208,24 @@ func (d *Daemon) runMapping(ctx context.Context, mapping Mapping) {
 		}
 
 		if err != nil {
+			if isAuthError(err) {
+				authFailures++
+				d.Logger.Error("authentication failed",
+					"identity", mapping.Identity,
+					"attempt", authFailures,
+					"max", maxAuthFailures,
+					"err", err,
+				)
+				if authFailures >= maxAuthFailures {
+					d.Logger.Error("max auth failures reached, stopping mapping",
+						"identity", mapping.Identity,
+					)
+					return
+				}
+			} else {
+				authFailures = 0
+			}
+
 			d.Logger.Warn("connection failed",
 				"identity", mapping.Identity,
 				"attempt", attempt,
