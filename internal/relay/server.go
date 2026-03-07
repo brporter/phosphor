@@ -15,11 +15,13 @@ type Server struct {
 	verifier     *auth.Verifier
 	devMode      bool
 	authSessions AuthSessionStoreI
+	apiKeySecret []byte
+	blocklist    *Blocklist
 }
 
 // NewServer creates a new relay server.
-func NewServer(hub *Hub, logger *slog.Logger, baseURL string, verifier *auth.Verifier, devMode bool, authSessions AuthSessionStoreI) *Server {
-	return &Server{hub: hub, logger: logger, baseURL: baseURL, verifier: verifier, devMode: devMode, authSessions: authSessions}
+func NewServer(hub *Hub, logger *slog.Logger, baseURL string, verifier *auth.Verifier, devMode bool, authSessions AuthSessionStoreI, apiKeySecret []byte, blocklist *Blocklist) *Server {
+	return &Server{hub: hub, logger: logger, baseURL: baseURL, verifier: verifier, devMode: devMode, authSessions: authSessions, apiKeySecret: apiKeySecret, blocklist: blocklist}
 }
 
 // Handler returns the HTTP handler with all routes.

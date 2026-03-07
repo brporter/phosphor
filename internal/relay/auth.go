@@ -2,6 +2,7 @@ package relay
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -12,6 +13,26 @@ import (
 func (s *Server) verifyToken(ctx context.Context, token string) (string, string, error) {
 	if token == "" && s.devMode {
 		return "dev", "anonymous", nil
+	}
+
+	// API key authentication (tokens prefixed with "phk:")
+	if strings.HasPrefix(token, "phk:") {
+		if s.devMode {
+			return "dev", "anonymous", nil
+		}
+		raw := strings.TrimPrefix(token, "phk:")
+		claims, err := VerifyAPIKey(s.apiKeySecret, raw)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid api key: %w", err)
+		}
+		if s.blocklist != nil && s.blocklist.IsRevoked(claims.KeyID) {
+			return "", "", fmt.Errorf("api key revoked")
+		}
+		provider, sub, err := ParseAPIKeySubject(claims.Subject)
+		if err != nil {
+			return "", "", err
+		}
+		return provider, sub, nil
 	}
 
 	// Dev-mode fallback: parse token as "provider:sub"

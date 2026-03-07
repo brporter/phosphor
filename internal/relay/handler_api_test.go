@@ -15,7 +15,7 @@ func TestHandleListSessions_Empty(t *testing.T) {
 	hub := NewHub(store, nil, "test", slog.Default())
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
-	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions}
+	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions, blocklist: NewBlocklist("")}
 
 	r := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	w := httptest.NewRecorder()
@@ -41,7 +41,7 @@ func TestHandleListSessions_WithSessions(t *testing.T) {
 	hub := NewHub(store, nil, "test", slog.Default())
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
-	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions}
+	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions, blocklist: NewBlocklist("")}
 
 	ctx := context.Background()
 
@@ -131,7 +131,7 @@ func TestHandleListSessions_WithSessions(t *testing.T) {
 func TestHandleListSessions_Unauthorized(t *testing.T) {
 	store := NewMemorySessionStore()
 	hub := NewHub(store, nil, "test", slog.Default())
-	s := &Server{hub: hub, logger: slog.Default(), devMode: false}
+	s := &Server{hub: hub, logger: slog.Default(), devMode: false, blocklist: NewBlocklist("")}
 
 	r := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	w := httptest.NewRecorder()
@@ -149,7 +149,7 @@ func TestHandleListSessions_LazySessionFields(t *testing.T) {
 	hub := NewHub(store, nil, "test", slog.Default())
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
-	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions}
+	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions, blocklist: NewBlocklist("")}
 
 	ctx := context.Background()
 
@@ -205,7 +205,7 @@ func TestHandleListSessions_DelegatedVisibility(t *testing.T) {
 	hub := NewHub(store, nil, "test", slog.Default())
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
-	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions}
+	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions, blocklist: NewBlocklist("")}
 
 	ctx := context.Background()
 
@@ -273,7 +273,7 @@ func TestHandleDestroySession_DelegatedOwnership(t *testing.T) {
 	hub := NewHub(store, nil, "test", slog.Default())
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
-	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions}
+	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions, blocklist: NewBlocklist("")}
 
 	ctx := context.Background()
 

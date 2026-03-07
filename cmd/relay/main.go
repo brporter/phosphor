@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"log/slog"
 	"net/http"
 	"os"
@@ -145,7 +146,24 @@ func main() {
 		rs.StartExpiryPoller(ctx, 10*time.Second)
 	}
 
-	srv := relay.NewServer(hub, logger, baseURL, verifier, devMode, authSessions)
+	// API key signing secret
+	apiKeySecret := []byte(os.Getenv("API_KEY_SECRET"))
+	if len(apiKeySecret) == 0 {
+		generated := make([]byte, 32)
+		rand.Read(generated)
+		apiKeySecret = generated
+		logger.Warn("API_KEY_SECRET not set — generated random secret; API keys will not survive restarts")
+	}
+
+	// API key revocation blocklist
+	revocationFile := os.Getenv("API_KEY_REVOCATION_FILE")
+	if revocationFile == "" {
+		revocationFile = "/etc/phosphor/revoked-keys.txt"
+	}
+	blocklist := relay.NewBlocklist(revocationFile)
+	defer blocklist.Stop()
+
+	srv := relay.NewServer(hub, logger, baseURL, verifier, devMode, authSessions, apiKeySecret, blocklist)
 
 	httpServer := &http.Server{
 		Addr:         addr,

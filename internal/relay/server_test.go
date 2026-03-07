@@ -24,7 +24,7 @@ func TestNewServer(t *testing.T) {
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
 
-	srv := NewServer(hub, logger, baseURL, verifier, devMode, authSessions)
+	srv := NewServer(hub, logger, baseURL, verifier, devMode, authSessions, nil, NewBlocklist(""))
 
 	if srv == nil {
 		t.Fatal("expected non-nil server")
@@ -49,7 +49,7 @@ func TestHandler_HealthEndpoint(t *testing.T) {
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
 
-	srv := NewServer(hub, slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true, authSessions)
+	srv := NewServer(hub, slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true, authSessions, nil, NewBlocklist(""))
 
 	handler := srv.Handler()
 
@@ -72,7 +72,7 @@ func TestHandler_RoutesExist(t *testing.T) {
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
 
-	srv := NewServer(hub, slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true, authSessions)
+	srv := NewServer(hub, slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true, authSessions, nil, NewBlocklist(""))
 
 	handler := srv.Handler()
 
