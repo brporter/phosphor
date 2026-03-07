@@ -56,6 +56,28 @@ func TestAddRemoveMapping(t *testing.T) {
 	}
 }
 
+func TestConfigApiKeyRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "daemon.json")
+
+	cfg := &Config{
+		Relay:  "wss://example.com",
+		ApiKey: "phk:test-key",
+	}
+
+	if err := WriteConfig(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := ReadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.ApiKey != "phk:test-key" {
+		t.Errorf("ApiKey = %q, want %q", loaded.ApiKey, "phk:test-key")
+	}
+}
+
 func TestReadConfig_NotFound(t *testing.T) {
 	_, err := ReadConfig("/nonexistent/path/daemon.json")
 	if err == nil {

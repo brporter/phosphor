@@ -40,14 +40,13 @@ func newDaemonCmd() *cobra.Command {
 
 			logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-			tc, err := cli.LoadTokenCache()
-			if err != nil {
-				return fmt.Errorf("no cached token — run 'phosphor login' first: %w", err)
+			if cfg.ApiKey == "" {
+				return fmt.Errorf("no api_key in config — generate one in the web UI and run 'phosphor daemon set-key <key>'")
 			}
 
 			d := &daemon.Daemon{
 				Config:     cfg,
-				Token:      tc.AccessToken,
+				Token:      cfg.ApiKey,
 				Logger:     logger,
 				ConfigPath: configPath,
 				Spawn:      daemon.StartPTYAsUser,
@@ -181,7 +180,29 @@ func newDaemonCmd() *cobra.Command {
 		},
 	}
 
+	// --- daemon set-key ---
+	setKeyCmd := &cobra.Command{
+		Use:   "set-key [key]",
+		Short: "Set the API key for daemon authentication",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if configPath == "" {
+				configPath = daemon.DefaultConfigPath()
+			}
+			cfg, err := daemon.ReadConfig(configPath)
+			if err != nil {
+				return fmt.Errorf("no config at %s — run 'phosphor daemon map' first: %w", configPath, err)
+			}
+			cfg.ApiKey = args[0]
+			if err := daemon.WriteConfig(configPath, cfg); err != nil {
+				return err
+			}
+			fmt.Println("API key set successfully.")
+			return nil
+		},
+	}
+
 	daemonCmd.PersistentFlags().StringVar(&configPath, "config", "", "Config file path (default: platform-specific)")
-	daemonCmd.AddCommand(runCmd, installCmd, uninstallCmd, mapCmd, unmapCmd, mapsCmd)
+	daemonCmd.AddCommand(runCmd, installCmd, uninstallCmd, mapCmd, unmapCmd, mapsCmd, setKeyCmd)
 	return daemonCmd
 }

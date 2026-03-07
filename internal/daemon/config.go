@@ -18,6 +18,7 @@ type Mapping struct {
 // Config holds daemon configuration.
 type Config struct {
 	Relay    string    `json:"relay"`
+	ApiKey   string    `json:"api_key,omitempty"`
 	Mappings []Mapping `json:"mappings"`
 }
 
