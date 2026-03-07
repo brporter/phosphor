@@ -44,7 +44,7 @@ Defined in `internal/protocol/` (Go) and `web/src/lib/protocol.ts` (TypeScript) 
 
 ## VERY IMPORTANT: Bash Tool Usage
 
-**NEVER issue compound bash commands.** Each `git` or shell command must be a separate, single Bash tool call. Do NOT chain commands with `&&`, `;`, or `||`. This causes constant prompt loops and dramatically slows progress.
+**NEVER issue compound commands.** Each `git` or shell command must be a separate, single tool call. Do NOT chain commands with `&&`, `;`, or `||`. This causes constant prompt loops.
 
 ## Key Conventions
 
