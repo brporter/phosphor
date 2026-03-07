@@ -19,7 +19,7 @@ type sessionListItem struct {
 
 // HandleDestroySession terminates a session. Only the session owner can destroy it.
 func (s *Server) HandleDestroySession(w http.ResponseWriter, r *http.Request) {
-	provider, sub, err := s.extractIdentity(r)
+	provider, sub, email, err := s.extractIdentity(r)
 	if err != nil {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return
@@ -38,7 +38,8 @@ func (s *Server) HandleDestroySession(w http.ResponseWriter, r *http.Request) {
 
 	isOwner := info.OwnerProvider == provider && info.OwnerSub == sub
 	if !isOwner && info.DelegateFor != "" {
-		isOwner = sub == info.DelegateFor
+		isOwner = sub == info.DelegateFor ||
+			(email != "" && email == info.DelegateFor)
 	}
 	if !isOwner {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
@@ -51,7 +52,7 @@ func (s *Server) HandleDestroySession(w http.ResponseWriter, r *http.Request) {
 
 // HandleListSessions returns the sessions owned by the authenticated user.
 func (s *Server) HandleListSessions(w http.ResponseWriter, r *http.Request) {
-	provider, sub, err := s.extractIdentity(r)
+	provider, sub, email, err := s.extractIdentity(r)
 	if err != nil {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return
@@ -63,9 +64,18 @@ func (s *Server) HandleListSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Also find sessions delegated to this identity (skip if already queried as "delegated")
+	// Also find sessions delegated to this identity by sub
 	if provider != "delegated" {
 		delegated, err2 := s.hub.ListForOwner(r.Context(), "delegated", sub)
+		if err2 == nil {
+			sessions = append(sessions, delegated...)
+		}
+	}
+
+	// Also find sessions delegated by email (e.g. Microsoft uses opaque sub,
+	// but daemon mappings typically use the email address)
+	if email != "" && email != sub {
+		delegated, err2 := s.hub.ListForOwner(r.Context(), "delegated", email)
 		if err2 == nil {
 			sessions = append(sessions, delegated...)
 		}

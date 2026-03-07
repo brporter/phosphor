@@ -14,7 +14,7 @@ import (
 func TestVerifyToken_DevMode_EmptyToken(t *testing.T) {
 	s := &Server{devMode: true, logger: slog.Default(), blocklist: NewBlocklist("")}
 
-	provider, sub, err := s.verifyToken(t.Context(), "")
+	provider, sub, _, err := s.verifyToken(t.Context(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -29,7 +29,7 @@ func TestVerifyToken_DevMode_EmptyToken(t *testing.T) {
 func TestVerifyToken_DevMode_ColonFormat(t *testing.T) {
 	s := &Server{devMode: true, logger: slog.Default(), blocklist: NewBlocklist("")}
 
-	provider, sub, err := s.verifyToken(t.Context(), "prov:sub")
+	provider, sub, _, err := s.verifyToken(t.Context(), "prov:sub")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestVerifyToken_DevMode_SinglePart(t *testing.T) {
 	// devMode is true, so the final devMode fallback fires.
 	s := &Server{devMode: true, logger: slog.Default(), blocklist: NewBlocklist("")}
 
-	provider, sub, err := s.verifyToken(t.Context(), "noseparator")
+	provider, sub, _, err := s.verifyToken(t.Context(), "noseparator")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestVerifyToken_DevMode_SinglePart(t *testing.T) {
 func TestVerifyToken_NonDev_EmptyToken(t *testing.T) {
 	s := &Server{devMode: false, logger: slog.Default(), blocklist: NewBlocklist("")}
 
-	_, _, err := s.verifyToken(t.Context(), "")
+	_, _, _, err := s.verifyToken(t.Context(), "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -85,7 +85,7 @@ func TestExtractIdentity_BearerToken(t *testing.T) {
 	}
 	r.Header.Set("Authorization", "Bearer test:user")
 
-	provider, sub, err := s.extractIdentity(r)
+	provider, sub, _, err := s.extractIdentity(r)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestVerifyToken_APIKey_Valid(t *testing.T) {
 		blocklist:    NewBlocklist(""),
 	}
 
-	provider, sub, err := s.verifyToken(t.Context(), "phk:"+rawJWT)
+	provider, sub, _, err := s.verifyToken(t.Context(), "phk:"+rawJWT)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestVerifyToken_APIKey_Revoked(t *testing.T) {
 		blocklist:    bl,
 	}
 
-	_, _, err = s.verifyToken(t.Context(), "phk:"+rawJWT)
+	_, _, _, err = s.verifyToken(t.Context(), "phk:"+rawJWT)
 	if err == nil {
 		t.Fatal("expected error for revoked key, got nil")
 	}
@@ -163,7 +163,7 @@ func TestVerifyToken_APIKey_DevMode(t *testing.T) {
 		blocklist: NewBlocklist(""),
 	}
 
-	provider, sub, err := s.verifyToken(t.Context(), "phk:anything")
+	provider, sub, _, err := s.verifyToken(t.Context(), "phk:anything")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestVerifyToken_APIKey_WrongSecret(t *testing.T) {
 		blocklist:    NewBlocklist(""),
 	}
 
-	_, _, err = s.verifyToken(t.Context(), "phk:"+rawJWT)
+	_, _, _, err = s.verifyToken(t.Context(), "phk:"+rawJWT)
 	if err == nil {
 		t.Fatal("expected error for wrong secret, got nil")
 	}

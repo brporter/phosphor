@@ -45,7 +45,7 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify token and extract identity
-	ownerProvider, ownerSub, err := s.verifyToken(ctx, hello.Token)
+	ownerProvider, ownerSub, _, err := s.verifyToken(ctx, hello.Token)
 	if err != nil {
 		sendError(ctx, conn, "auth_failed", "authentication failed: "+err.Error())
 		return

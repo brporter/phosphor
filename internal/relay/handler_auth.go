@@ -405,13 +405,19 @@ func (s *Server) HandleCLIChoose(w http.ResponseWriter, r *http.Request) {
 // HandleGenerateAPIKey generates a new API key for the authenticated user.
 // POST /api/auth/api-key
 func (s *Server) HandleGenerateAPIKey(w http.ResponseWriter, r *http.Request) {
-	provider, sub, err := s.extractIdentity(r)
+	provider, sub, email, err := s.extractIdentity(r)
 	if err != nil {
 		http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
 		return
 	}
 
-	key, keyID, err := GenerateAPIKey(s.apiKeySecret, provider, sub)
+	// Prefer email over opaque sub for the API key identity, since daemon
+	// mappings typically reference users by email address.
+	identity := sub
+	if email != "" {
+		identity = email
+	}
+	key, keyID, err := GenerateAPIKey(s.apiKeySecret, provider, identity)
 	if err != nil {
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return

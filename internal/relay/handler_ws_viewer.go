@@ -47,7 +47,7 @@ func (s *Server) HandleViewerWebSocket(w http.ResponseWriter, r *http.Request) {
 	join.SessionID = sessionID
 
 	// Verify token and extract identity
-	viewerProvider, viewerSub, err := s.verifyToken(ctx, join.Token)
+	viewerProvider, viewerSub, viewerEmail, err := s.verifyToken(ctx, join.Token)
 	if err != nil {
 		sendError(ctx, conn, "auth_failed", "authentication failed: "+err.Error())
 		return
@@ -66,9 +66,10 @@ func (s *Server) HandleViewerWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Verify ownership: viewer must be the session owner
 	isOwner := viewerProvider == info.OwnerProvider && viewerSub == info.OwnerSub
-	// For delegated sessions, match viewer by delegated identity
+	// For delegated sessions, match viewer by sub or email
 	if !isOwner && info.DelegateFor != "" {
-		isOwner = viewerSub == info.DelegateFor
+		isOwner = viewerSub == info.DelegateFor ||
+			(viewerEmail != "" && viewerEmail == info.DelegateFor)
 	}
 	if !isOwner {
 		sendError(ctx, conn, "forbidden", "you do not own this session")
