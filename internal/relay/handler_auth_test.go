@@ -515,6 +515,58 @@ func TestHandleAuthPoll_Complete(t *testing.T) {
 	}
 }
 
+// --- HandleGenerateAPIKey ---
+
+func TestHandleGenerateAPIKey_Success(t *testing.T) {
+	s := newTestAuthServer(t) // devMode=true
+	s.apiKeySecret = []byte("test-secret-32-bytes-long-xxxxxx")
+
+	r := httptest.NewRequest(http.MethodPost, "/api/auth/api-key", nil)
+	r.Header.Set("Authorization", "Bearer dev:user@example.com")
+	w := httptest.NewRecorder()
+
+	s.HandleGenerateAPIKey(w, r)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var result map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	apiKey := result["api_key"]
+	if apiKey == "" {
+		t.Fatal("api_key is empty")
+	}
+	if !strings.HasPrefix(apiKey, "phk:") {
+		t.Errorf("api_key %q does not have phk: prefix", apiKey)
+	}
+
+	keyID := result["key_id"]
+	if keyID == "" {
+		t.Fatal("key_id is empty")
+	}
+}
+
+func TestHandleGenerateAPIKey_Unauthenticated(t *testing.T) {
+	s := newTestAuthServer(t)
+	s.devMode = false
+	s.apiKeySecret = []byte("test-secret-32-bytes-long-xxxxxx")
+
+	r := httptest.NewRequest(http.MethodPost, "/api/auth/api-key", nil)
+	// No Authorization header
+	w := httptest.NewRecorder()
+
+	s.HandleGenerateAPIKey(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", w.Code)
+	}
+}
+
 // --- renderAuthResult ---
 
 func TestRenderAuthResult_XSS(t *testing.T) {

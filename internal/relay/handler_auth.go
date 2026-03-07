@@ -402,6 +402,28 @@ func (s *Server) HandleCLIChoose(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target, http.StatusFound)
 }
 
+// HandleGenerateAPIKey generates a new API key for the authenticated user.
+// POST /api/auth/api-key
+func (s *Server) HandleGenerateAPIKey(w http.ResponseWriter, r *http.Request) {
+	provider, sub, err := s.extractIdentity(r)
+	if err != nil {
+		http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
+		return
+	}
+
+	key, keyID, err := GenerateAPIKey(s.apiKeySecret, provider, sub)
+	if err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"api_key": "phk:" + key,
+		"key_id":  keyID,
+	})
+}
+
 func (s *Server) renderAuthResult(w http.ResponseWriter, success bool, errMsg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if success {

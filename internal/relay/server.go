@@ -43,6 +43,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/auth/callback", s.HandleAuthCallback)
 	mux.HandleFunc("POST /api/auth/callback", s.HandleAuthCallback)
 	mux.HandleFunc("GET /api/auth/poll", s.HandleAuthPoll)
+	mux.HandleFunc("POST /api/auth/api-key", s.HandleGenerateAPIKey)
 
 	// CLI provider-picker auth flow
 	mux.HandleFunc("POST /api/auth/cli-start", s.HandleCLIStart)
