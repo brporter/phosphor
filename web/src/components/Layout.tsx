@@ -52,6 +52,12 @@ export function Layout() {
               <span style={{ color: "var(--text)", fontSize: 12 }}>
                 {user.profile?.email ?? user.profile?.sub ?? "signed in"}
               </span>
+              <Link
+                to="/settings"
+                style={{ color: "var(--text)", fontSize: 12, textDecoration: "none" }}
+              >
+                settings
+              </Link>
               <button onClick={() => void logout()}>logout</button>
             </>
           ) : (

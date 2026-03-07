@@ -4,6 +4,7 @@ import { Layout } from "./components/Layout";
 import { SessionList } from "./components/SessionList";
 import { TerminalView } from "./components/TerminalView";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { SettingsPage } from "./components/SettingsPage";
 
 export function App() {
   return (
@@ -24,6 +25,14 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <TerminalView />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <ProtectedRoute>
+                  <SettingsPage />
                 </ProtectedRoute>
               }
             />

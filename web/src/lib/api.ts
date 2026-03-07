@@ -29,6 +29,29 @@ export async function destroySession(id: string, token: string | null): Promise<
   }
 }
 
+export interface ApiKeyResponse {
+  api_key: string;
+  key_id: string;
+}
+
+export async function generateApiKey(token: string | null): Promise<ApiKeyResponse> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${BASE}/api/auth/api-key`, {
+    method: "POST",
+    headers,
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to generate API key: ${res.status}`);
+  }
+  return res.json() as Promise<ApiKeyResponse>;
+}
+
 export async function fetchSessions(token: string | null): Promise<SessionData[]> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
