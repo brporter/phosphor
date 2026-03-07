@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/brporter/phosphor/internal/auth"
 )
@@ -41,12 +42,60 @@ type authLoginResponse struct {
 	AuthURL   string `json:"auth_url"`
 }
 
+// HandleAuthConfig returns the list of available authentication providers.
+// GET /api/auth/config
+func (s *Server) HandleAuthConfig(w http.ResponseWriter, r *http.Request) {
+	providers := s.verifier.ProviderNames()
+	if s.devMode {
+		providers = append([]string{"dev"}, providers...)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"providers": providers})
+}
+
+// generateDevToken creates a synthetic unsigned JWT for dev-mode authentication.
+func generateDevToken() string {
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"typ":"JWT","alg":"none"}`))
+	exp := time.Now().Add(24 * time.Hour).Unix()
+	payload := fmt.Sprintf(`{"sub":"dev-user","iss":"dev","email":"dev@localhost","exp":%d}`, exp)
+	payloadB64 := base64.RawURLEncoding.EncodeToString([]byte(payload))
+	return header + "." + payloadB64 + "."
+}
+
 // HandleAuthLogin starts a relay-mediated browser auth flow.
-// POST /api/auth/login  body: {"provider":"apple"|"microsoft"|"google"}
+// POST /api/auth/login  body: {"provider":"apple"|"microsoft"|"google"|"dev"}
 func (s *Server) HandleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	var req authLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Dev provider: short-circuit the OIDC flow.
+	if req.Provider == "dev" {
+		if !s.devMode {
+			http.Error(w, `{"error":"unknown provider"}`, http.StatusBadRequest)
+			return
+		}
+
+		source := req.Source
+		if source == "" {
+			source = "cli"
+		}
+
+		sess, err := s.authSessions.Create(r.Context(), "dev", "", source)
+		if err != nil {
+			http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+			return
+		}
+
+		s.authSessions.Complete(r.Context(), sess.ID, generateDevToken())
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(authLoginResponse{
+			SessionID: sess.ID,
+			AuthURL:   "",
+		})
 		return
 	}
 

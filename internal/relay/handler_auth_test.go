@@ -102,6 +102,114 @@ func TestCodeChallenge_Deterministic(t *testing.T) {
 	}
 }
 
+// --- HandleAuthConfig ---
+
+func TestHandleAuthConfig_DevMode(t *testing.T) {
+	s := newTestAuthServer(t) // devMode=true, has "test" provider
+
+	r := httptest.NewRequest(http.MethodGet, "/api/auth/config", nil)
+	w := httptest.NewRecorder()
+
+	s.HandleAuthConfig(w, r)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var result struct {
+		Providers []string `json:"providers"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	// "dev" should be first, then the registered "test" provider.
+	if len(result.Providers) < 2 {
+		t.Fatalf("providers = %v, want at least [dev, test]", result.Providers)
+	}
+	if result.Providers[0] != "dev" {
+		t.Errorf("providers[0] = %q, want dev", result.Providers[0])
+	}
+}
+
+func TestHandleAuthConfig_NoDevMode(t *testing.T) {
+	s := newTestAuthServer(t)
+	s.devMode = false
+
+	r := httptest.NewRequest(http.MethodGet, "/api/auth/config", nil)
+	w := httptest.NewRecorder()
+
+	s.HandleAuthConfig(w, r)
+
+	var result struct {
+		Providers []string `json:"providers"`
+	}
+	json.NewDecoder(w.Result().Body).Decode(&result)
+
+	for _, p := range result.Providers {
+		if p == "dev" {
+			t.Error("dev provider should not appear when devMode is false")
+		}
+	}
+}
+
+// --- HandleAuthLogin (dev provider) ---
+
+func TestHandleAuthLogin_DevProvider(t *testing.T) {
+	s := newTestAuthServer(t) // devMode=true
+
+	body := strings.NewReader(`{"provider":"dev","source":"web"}`)
+	r := httptest.NewRequest(http.MethodPost, "/api/auth/login", body)
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	s.HandleAuthLogin(w, r)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var result authLoginResponse
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	if result.SessionID == "" {
+		t.Fatal("session_id is empty")
+	}
+	if result.AuthURL != "" {
+		t.Errorf("auth_url = %q, want empty for dev provider", result.AuthURL)
+	}
+
+	// Session should already be completed — poll should return the token.
+	token, ok, err := s.authSessions.Consume(context.Background(), result.SessionID)
+	if err != nil {
+		t.Fatalf("Consume: %v", err)
+	}
+	if !ok {
+		t.Fatal("session was not pre-completed for dev provider")
+	}
+	if !strings.Contains(token, ".") {
+		t.Errorf("dev token %q does not look like a JWT", token)
+	}
+}
+
+func TestHandleAuthLogin_DevProvider_NotInDevMode(t *testing.T) {
+	s := newTestAuthServer(t)
+	s.devMode = false
+
+	body := strings.NewReader(`{"provider":"dev"}`)
+	r := httptest.NewRequest(http.MethodPost, "/api/auth/login", body)
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	s.HandleAuthLogin(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", w.Code)
+	}
+}
+
 // --- HandleAuthLogin ---
 
 func TestHandleAuthLogin_Success(t *testing.T) {

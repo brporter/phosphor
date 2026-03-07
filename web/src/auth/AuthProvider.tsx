@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { fetchAuthConfig } from "../lib/api";
 
 interface UserProfile {
   sub: string;
@@ -21,6 +22,7 @@ interface AuthUser {
 interface AuthContextValue {
   user: AuthUser | null;
   isLoading: boolean;
+  providers: string[];
   login: (provider: string) => Promise<void>;
   logout: () => Promise<void>;
   getToken: () => string | null;
@@ -29,6 +31,7 @@ interface AuthContextValue {
 export const AuthContext = createContext<AuthContextValue>({
   user: null,
   isLoading: true,
+  providers: [],
   login: async () => {},
   logout: async () => {},
   getToken: () => null,
@@ -69,8 +72,12 @@ function loadUser(): AuthUser | null {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [providers, setProviders] = useState<string[]>([]);
 
   useEffect(() => {
+    // Fetch available providers from the relay.
+    fetchAuthConfig().then((cfg) => setProviders(cfg.providers));
+
     // Check for pending auth session (returning from provider redirect)
     const sessionId = localStorage.getItem(SESSION_KEY);
     if (sessionId) {
@@ -96,6 +103,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(false);
   }, []);
 
+  const consumeSession = useCallback(async (sessionId: string) => {
+    const resp = await fetch(`/api/auth/poll?session=${sessionId}`);
+    const data = await resp.json();
+    if (data.status === "complete" && data.id_token) {
+      const profile = parseJwtPayload(data.id_token);
+      const u: AuthUser = { id_token: data.id_token, profile };
+      saveUser(u);
+      setUser(u);
+    }
+  }, []);
+
   const login = useCallback(async (provider: string) => {
     const resp = await fetch("/api/auth/login", {
       method: "POST",
@@ -108,9 +126,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const { auth_url, session_id } = await resp.json();
+
+    // Dev provider: session is pre-completed, no redirect needed.
+    if (!auth_url) {
+      await consumeSession(session_id);
+      return;
+    }
+
     localStorage.setItem(SESSION_KEY, session_id);
     window.location.href = auth_url;
-  }, []);
+  }, [consumeSession]);
 
   const logout = useCallback(async () => {
     localStorage.removeItem(STORAGE_KEY);
@@ -122,8 +147,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   const value = useMemo(
-    () => ({ user, isLoading, login, logout, getToken }),
-    [user, isLoading, login, logout, getToken],
+    () => ({ user, isLoading, providers, login, logout, getToken }),
+    [user, isLoading, providers, login, logout, getToken],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

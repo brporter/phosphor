@@ -152,3 +152,15 @@ func (m *MemorySessionStore) SetProcessExited(_ context.Context, sessionID strin
 	m.sessions[sessionID] = info
 	return nil
 }
+
+func (m *MemorySessionStore) SetProcessRunning(_ context.Context, sessionID string, running bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	info, ok := m.sessions[sessionID]
+	if !ok {
+		return nil
+	}
+	info.ProcessRunning = running
+	m.sessions[sessionID] = info
+	return nil
+}

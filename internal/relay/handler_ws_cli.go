@@ -94,18 +94,32 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		s.logger.Info("cli reconnected", "session", sessionID)
 	} else {
-		// New connection path
 		sessionID, _ = gonanoid.New(12)
 		token := generateToken()
+
+		// Determine session owner — delegated or direct
+		sessionOwnerProvider := ownerProvider
+		sessionOwnerSub := ownerSub
+		serviceIdentity := ""
+		if hello.DelegateFor != "" {
+			serviceIdentity = ownerProvider + ":" + ownerSub
+			sessionOwnerProvider = "delegated"
+			sessionOwnerSub = hello.DelegateFor
+		}
+
 		info := SessionInfo{
-			ID:             sessionID,
-			OwnerProvider:  ownerProvider,
-			OwnerSub:       ownerSub,
-			Mode:           hello.Mode,
-			Cols:           hello.Cols,
-			Rows:           hello.Rows,
-			Command:        hello.Command,
-			ReconnectToken: token,
+			ID:              sessionID,
+			OwnerProvider:   sessionOwnerProvider,
+			OwnerSub:        sessionOwnerSub,
+			Mode:            hello.Mode,
+			Cols:            hello.Cols,
+			Rows:            hello.Rows,
+			Command:         hello.Command,
+			ReconnectToken:  token,
+			Lazy:            hello.Lazy,
+			ProcessRunning:  !hello.Lazy,
+			DelegateFor:     hello.DelegateFor,
+			ServiceIdentity: serviceIdentity,
 		}
 
 		if _, err := s.hub.Register(ctx, info, conn); err != nil {
@@ -158,11 +172,20 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 		case protocol.TypeProcessExited:
 			s.hub.store.SetProcessExited(ctx, sessionID, true)
+			s.hub.store.SetProcessRunning(ctx, sessionID, false)
 			encoded, err := protocol.Encode(protocol.TypeProcessExited, payload)
 			if err == nil {
 				s.hub.BroadcastOutput(ctx, sessionID, encoded)
 			}
 			s.logger.Info("process exited", "session", sessionID)
+		case protocol.TypeSpawnComplete:
+			var sc protocol.SpawnComplete
+			if err := protocol.DecodeJSON(payload, &sc); err == nil {
+				s.hub.store.UpdateDimensions(ctx, sessionID, sc.Cols, sc.Rows)
+				s.hub.store.SetProcessRunning(ctx, sessionID, true)
+				s.hub.store.SetProcessExited(ctx, sessionID, false)
+				s.logger.Info("spawn complete", "session", sessionID, "cols", sc.Cols, "rows", sc.Rows)
+			}
 		case protocol.TypePong:
 			// heartbeat response, ignore
 		}

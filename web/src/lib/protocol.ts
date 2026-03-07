@@ -14,6 +14,8 @@ export const MsgType = {
   Error: 0x16,
   ViewerCount: 0x20,
   Mode: 0x21,
+  SpawnRequest: 0x22,
+  SpawnComplete: 0x23,
   ProcessExited: 0x17,
   Restart: 0x18,
   Ping: 0x30,

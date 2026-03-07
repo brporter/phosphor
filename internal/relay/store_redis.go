@@ -61,6 +61,10 @@ func (s *RedisSessionStore) Register(ctx context.Context, info SessionInfo) erro
 		"disconnected":     "false",
 		"disconnected_at":  "",
 		"process_exited":   "false",
+		"lazy":             strconv.FormatBool(info.Lazy),
+		"process_running":  strconv.FormatBool(info.ProcessRunning),
+		"delegate_for":     info.DelegateFor,
+		"service_identity": info.ServiceIdentity,
 	})
 
 	pipe.SAdd(ctx, ownerKey(info.OwnerProvider, info.OwnerSub), info.ID)
@@ -100,6 +104,8 @@ func (s *RedisSessionStore) Get(ctx context.Context, sessionID string) (SessionI
 	rows, _ := strconv.Atoi(vals["rows"])
 	disconnected := vals["disconnected"] == "true"
 	processExited := vals["process_exited"] == "true"
+	lazy := vals["lazy"] == "true"
+	processRunning := vals["process_running"] == "true"
 
 	var disconnectedAt time.Time
 	if vals["disconnected_at"] != "" {
@@ -107,18 +113,22 @@ func (s *RedisSessionStore) Get(ctx context.Context, sessionID string) (SessionI
 	}
 
 	return SessionInfo{
-		ID:             vals["id"],
-		OwnerProvider:  vals["owner_provider"],
-		OwnerSub:       vals["owner_sub"],
-		Mode:           vals["mode"],
-		Command:        vals["command"],
-		ReconnectToken: vals["reconnect_token"],
-		RelayID:        vals["relay_id"],
-		Cols:           cols,
-		Rows:           rows,
-		Disconnected:   disconnected,
-		DisconnectedAt: disconnectedAt,
-		ProcessExited:  processExited,
+		ID:              vals["id"],
+		OwnerProvider:   vals["owner_provider"],
+		OwnerSub:        vals["owner_sub"],
+		Mode:            vals["mode"],
+		Command:         vals["command"],
+		ReconnectToken:  vals["reconnect_token"],
+		RelayID:         vals["relay_id"],
+		Cols:            cols,
+		Rows:            rows,
+		Disconnected:    disconnected,
+		DisconnectedAt:  disconnectedAt,
+		ProcessExited:   processExited,
+		Lazy:            lazy,
+		ProcessRunning:  processRunning,
+		DelegateFor:     vals["delegate_for"],
+		ServiceIdentity: vals["service_identity"],
 	}, true, nil
 }
 
@@ -182,6 +192,14 @@ func (s *RedisSessionStore) SetProcessExited(ctx context.Context, sessionID stri
 		val = "true"
 	}
 	return s.rdb.HSet(ctx, sessionKey(sessionID), "process_exited", val).Err()
+}
+
+func (s *RedisSessionStore) SetProcessRunning(ctx context.Context, sessionID string, running bool) error {
+	val := "false"
+	if running {
+		val = "true"
+	}
+	return s.rdb.HSet(ctx, sessionKey(sessionID), "process_running", val).Err()
 }
 
 // StartExpiryPoller periodically checks for disconnected sessions whose expiry key has vanished.

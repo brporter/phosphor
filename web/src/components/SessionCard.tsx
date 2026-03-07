@@ -10,6 +10,8 @@ export interface SessionData {
   command: string;
   viewers: number;
   process_exited: boolean;
+  lazy: boolean;
+  process_running: boolean;
 }
 
 interface SessionCardProps {
@@ -78,6 +80,19 @@ export function SessionCard({ session, token, onDestroyed }: SessionCardProps) {
             >
               {session.mode}
             </span>
+            {session.lazy && !session.process_running && !session.process_exited && (
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "var(--green)",
+                  border: "1px solid var(--green-dim)",
+                  padding: "2px 6px",
+                  marginLeft: 4,
+                }}
+              >
+                ready
+              </span>
+            )}
             {session.process_exited && (
               <span
                 style={{

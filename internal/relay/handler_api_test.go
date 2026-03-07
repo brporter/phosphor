@@ -143,3 +143,169 @@ func TestHandleListSessions_Unauthorized(t *testing.T) {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
 	}
 }
+
+func TestHandleListSessions_LazySessionFields(t *testing.T) {
+	store := NewMemorySessionStore()
+	hub := NewHub(store, nil, "test", slog.Default())
+	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
+	t.Cleanup(authSessions.Stop)
+	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions}
+
+	ctx := context.Background()
+
+	// Register a lazy session with DelegateFor (simulating daemon creating a session)
+	info := SessionInfo{
+		ID:            "lazy1",
+		OwnerProvider: "delegated",
+		OwnerSub:      "user@example.com",
+		Mode:          "pty",
+		Cols:          80,
+		Rows:          24,
+		Command:       "bash",
+		Lazy:          true,
+		ProcessRunning: false,
+		DelegateFor:   "user@example.com",
+	}
+	hub.Register(ctx, info, nil)
+
+	// Query as the delegated identity (microsoft:user@example.com in dev mode token format)
+	r := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	r.Header.Set("Authorization", "Bearer delegated:user@example.com")
+	w := httptest.NewRecorder()
+
+	s.HandleListSessions(w, r)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var result []sessionListItem
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("got %d sessions, want 1", len(result))
+	}
+
+	item := result[0]
+	if item.ID != "lazy1" {
+		t.Errorf("ID = %q, want %q", item.ID, "lazy1")
+	}
+	if !item.Lazy {
+		t.Error("Lazy = false, want true")
+	}
+	if item.ProcessRunning {
+		t.Error("ProcessRunning = true, want false")
+	}
+}
+
+func TestHandleListSessions_DelegatedVisibility(t *testing.T) {
+	store := NewMemorySessionStore()
+	hub := NewHub(store, nil, "test", slog.Default())
+	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
+	t.Cleanup(authSessions.Stop)
+	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions}
+
+	ctx := context.Background()
+
+	// Session owned directly by microsoft:alice@example.com
+	directSession := SessionInfo{
+		ID:            "direct1",
+		OwnerProvider: "microsoft",
+		OwnerSub:      "alice@example.com",
+		Mode:          "pty",
+		Cols:          80,
+		Rows:          24,
+		Command:       "bash",
+	}
+	hub.Register(ctx, directSession, nil)
+
+	// Delegated session: owned by delegated:alice@example.com (daemon acts on alice's behalf)
+	delegatedSession := SessionInfo{
+		ID:            "delegated1",
+		OwnerProvider: "delegated",
+		OwnerSub:      "alice@example.com",
+		Mode:          "pty",
+		Cols:          80,
+		Rows:          24,
+		Command:       "zsh",
+		Lazy:          true,
+		DelegateFor:   "alice@example.com",
+	}
+	hub.Register(ctx, delegatedSession, nil)
+
+	// Query as microsoft:alice@example.com — should see BOTH sessions
+	r := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	r.Header.Set("Authorization", "Bearer microsoft:alice@example.com")
+	w := httptest.NewRecorder()
+
+	s.HandleListSessions(w, r)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var result []sessionListItem
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("got %d sessions, want 2", len(result))
+	}
+
+	byID := make(map[string]sessionListItem)
+	for _, item := range result {
+		byID[item.ID] = item
+	}
+
+	if _, ok := byID["direct1"]; !ok {
+		t.Error("direct session direct1 not found in response")
+	}
+	if _, ok := byID["delegated1"]; !ok {
+		t.Error("delegated session delegated1 not found in response")
+	}
+}
+
+func TestHandleDestroySession_DelegatedOwnership(t *testing.T) {
+	store := NewMemorySessionStore()
+	hub := NewHub(store, nil, "test", slog.Default())
+	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
+	t.Cleanup(authSessions.Stop)
+	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions}
+
+	ctx := context.Background()
+
+	// Delegated session
+	info := SessionInfo{
+		ID:            "del-destroy",
+		OwnerProvider: "delegated",
+		OwnerSub:      "bob@example.com",
+		Mode:          "pty",
+		Cols:          80,
+		Rows:          24,
+		Command:       "bash",
+		DelegateFor:   "bob@example.com",
+	}
+	hub.Register(ctx, info, nil)
+
+	// Destroy as microsoft:bob@example.com — should succeed via delegated match
+	r := httptest.NewRequest(http.MethodDelete, "/api/sessions/del-destroy", nil)
+	r.Header.Set("Authorization", "Bearer microsoft:bob@example.com")
+	r.SetPathValue("id", "del-destroy")
+	w := httptest.NewRecorder()
+
+	s.HandleDestroySession(w, r)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+
+	// Verify session is actually gone
+	_, ok, _ := hub.Get(ctx, "del-destroy")
+	if ok {
+		t.Error("session del-destroy should have been removed")
+	}
+}

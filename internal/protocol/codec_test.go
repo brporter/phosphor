@@ -251,6 +251,67 @@ func TestDecodeJSON_InvalidJSON(t *testing.T) {
 	}
 }
 
+// TestEncodeDecodeSpawnRequest verifies that TypeSpawnRequest encodes to a
+// single-byte message (no payload) and decodes back correctly.
+func TestEncodeDecodeSpawnRequest(t *testing.T) {
+	encoded, err := Encode(TypeSpawnRequest, nil)
+	if err != nil {
+		t.Fatalf("Encode error: %v", err)
+	}
+	if len(encoded) != 1 {
+		t.Fatalf("expected 1-byte message, got %d bytes", len(encoded))
+	}
+	if encoded[0] != TypeSpawnRequest {
+		t.Errorf("type byte: got 0x%02x, want 0x%02x", encoded[0], TypeSpawnRequest)
+	}
+
+	decodedType, payload, err := Decode(encoded)
+	if err != nil {
+		t.Fatalf("Decode error: %v", err)
+	}
+	if decodedType != TypeSpawnRequest {
+		t.Errorf("decoded type: got 0x%02x, want 0x%02x", decodedType, TypeSpawnRequest)
+	}
+	if len(payload) != 0 {
+		t.Errorf("expected empty payload, got %d bytes", len(payload))
+	}
+}
+
+// TestEncodeDecodeSpawnComplete verifies that TypeSpawnComplete encodes a
+// SpawnComplete struct with Cols/Rows as JSON and round-trips correctly.
+func TestEncodeDecodeSpawnComplete(t *testing.T) {
+	original := SpawnComplete{Cols: 120, Rows: 40}
+	encoded, err := Encode(TypeSpawnComplete, original)
+	if err != nil {
+		t.Fatalf("Encode error: %v", err)
+	}
+	if len(encoded) < 2 {
+		t.Fatal("expected multi-byte message")
+	}
+	if encoded[0] != TypeSpawnComplete {
+		t.Errorf("type byte: got 0x%02x, want 0x%02x", encoded[0], TypeSpawnComplete)
+	}
+
+	decodedType, payload, err := Decode(encoded)
+	if err != nil {
+		t.Fatalf("Decode error: %v", err)
+	}
+	if decodedType != TypeSpawnComplete {
+		t.Errorf("decoded type: got 0x%02x, want 0x%02x", decodedType, TypeSpawnComplete)
+	}
+
+	var decoded SpawnComplete
+	if err := DecodeJSON(payload, &decoded); err != nil {
+		t.Fatalf("DecodeJSON error: %v", err)
+	}
+	if decoded.Cols != original.Cols {
+		t.Errorf("Cols: got %d, want %d", decoded.Cols, original.Cols)
+	}
+	if decoded.Rows != original.Rows {
+		t.Errorf("Rows: got %d, want %d", decoded.Rows, original.Rows)
+	}
+}
+
 // TestEncodeDecode_RoundTrip verifies that encoding a message and then
 // decoding it produces the original type byte and payload for all message types.
 func TestEncodeDecode_RoundTrip(t *testing.T) {
