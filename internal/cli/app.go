@@ -229,12 +229,14 @@ func (a *App) runConnection(
 	defer ws.Close()
 
 	// Send Hello
+	hostname, _ := os.Hostname()
 	hello := protocol.Hello{
 		Token:          a.Token,
 		Mode:           a.Mode,
 		Cols:           cols,
 		Rows:           rows,
 		Command:        strings.Join(a.Command, " "),
+		Hostname:       hostname,
 		SessionID:      *sessionID,
 		ReconnectToken: *reconnectToken,
 	}

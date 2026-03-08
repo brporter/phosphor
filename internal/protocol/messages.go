@@ -28,7 +28,8 @@ type Hello struct {
 	Mode    string `json:"mode"` // "pty" or "pipe"
 	Cols    int    `json:"cols"`
 	Rows    int    `json:"rows"`
-	Command string `json:"command"`
+	Command  string `json:"command"`
+	Hostname string `json:"hostname,omitempty"`
 
 	Lazy        bool   `json:"lazy,omitempty"`
 	DelegateFor string `json:"delegate_for,omitempty"`

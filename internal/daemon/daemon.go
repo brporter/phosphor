@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -274,10 +275,12 @@ func (d *Daemon) runConnection(ctx context.Context, mapping Mapping) error {
 	defer conn.Close(websocket.StatusNormalClosure, "goodbye")
 
 	// Build Hello
+	hostname, _ := os.Hostname()
 	hello := protocol.Hello{
 		Token:       d.Token,
 		Mode:        "pty",
 		Command:     mapping.Shell,
+		Hostname:    hostname,
 		Lazy:        true,
 		DelegateFor: mapping.Identity,
 	}

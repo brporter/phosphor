@@ -11,6 +11,7 @@ type sessionListItem struct {
 	Cols           int    `json:"cols"`
 	Rows           int    `json:"rows"`
 	Command        string `json:"command"`
+	Hostname       string `json:"hostname"`
 	Viewers        int    `json:"viewers"`
 	ProcessExited  bool   `json:"process_exited"`
 	Lazy           bool   `json:"lazy"`
@@ -93,6 +94,7 @@ func (s *Server) HandleListSessions(w http.ResponseWriter, r *http.Request) {
 			Cols:           info.Cols,
 			Rows:           info.Rows,
 			Command:        info.Command,
+			Hostname:       info.Hostname,
 			Viewers:        viewers,
 			ProcessExited:  info.ProcessExited,
 			Lazy:           info.Lazy,

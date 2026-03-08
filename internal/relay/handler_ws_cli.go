@@ -115,6 +115,7 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 			Cols:            hello.Cols,
 			Rows:            hello.Rows,
 			Command:         hello.Command,
+			Hostname:        hello.Hostname,
 			ReconnectToken:  token,
 			Lazy:            hello.Lazy,
 			ProcessRunning:  !hello.Lazy,

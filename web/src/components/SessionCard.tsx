@@ -8,6 +8,7 @@ export interface SessionData {
   cols: number;
   rows: number;
   command: string;
+  hostname: string;
   viewers: number;
   process_exited: boolean;
   lazy: boolean;
@@ -68,7 +69,9 @@ export function SessionCard({ session, token, onDestroyed }: SessionCardProps) {
             }}
           >
             <span style={{ color: "var(--green)", fontWeight: 700 }}>
-              {session.command || session.mode}
+              {session.hostname
+                ? `${session.hostname}: ${session.command || session.mode}`
+                : session.command || session.mode}
             </span>
             <span
               style={{

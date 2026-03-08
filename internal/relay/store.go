@@ -15,6 +15,7 @@ type SessionInfo struct {
 	OwnerSub       string
 	Mode           string // "pty" or "pipe"
 	Command        string
+	Hostname       string
 	ReconnectToken string
 	RelayID        string
 	Cols           int
