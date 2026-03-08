@@ -65,7 +65,8 @@ jobs:
               "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" \
               "APPLE_KEY_ID=${{ secrets.APPLE_KEY_ID }}" \
               "APPLE_PRIVATE_KEY=${{ secrets.APPLE_PRIVATE_KEY }}" \
-              "REDIS_URL=${{ secrets.REDIS_URL }}"
+              "REDIS_URL=${{ secrets.REDIS_URL }}" \
+              "API_KEY_SECRET=${{ secrets.API_KEY_SECRET }}"
 
   # ── Build CLI for all platforms, create GitHub Release ──
   release:
