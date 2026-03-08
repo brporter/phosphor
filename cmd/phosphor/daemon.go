@@ -9,7 +9,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/brporter/phosphor/internal/cli"
 	"github.com/brporter/phosphor/internal/daemon"
 )
 
@@ -101,11 +100,10 @@ func newDaemonCmd() *cobra.Command {
 			}
 			cfg, err := daemon.ReadConfig(configPath)
 			if err != nil {
-				relay := mapRelay
-				if relay == "" {
-					relay = cli.DefaultRelayURL
+				if mapRelay == "" {
+					return fmt.Errorf("--relay flag is required when creating a new config (e.g. --relay wss://your-relay-server)")
 				}
-				cfg = &daemon.Config{Relay: relay}
+				cfg = &daemon.Config{Relay: mapRelay}
 			}
 			if mapRelay != "" {
 				cfg.Relay = mapRelay

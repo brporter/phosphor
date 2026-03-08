@@ -79,6 +79,9 @@ func main() {
 			if relayURL != "" {
 				cfg.RelayURL = relayURL
 			}
+			if cfg.RelayURL == "" {
+				return fmt.Errorf("--relay flag is required (e.g. --relay wss://your-relay-server)")
+			}
 
 			// Determine mode
 			mode := "pipe"
@@ -125,7 +128,7 @@ func main() {
 		},
 	}
 
-	rootCmd.Flags().StringVar(&relayURL, "relay", "", fmt.Sprintf("Relay server URL (default: %s)", cli.DefaultRelayURL))
+	rootCmd.Flags().StringVar(&relayURL, "relay", "", "Relay server URL (required)")
 	rootCmd.Flags().StringVar(&token, "token", "", "Auth token (default: read from cache)")
 	rootCmd.Flags().StringVar(&restart, "restart", "manual", "Process restart mode: manual, auto, never")
 	rootCmd.Flags().BoolVar(&logout, "logout", false, "Clear cached authentication tokens and exit")
@@ -141,6 +144,9 @@ func main() {
 			relay := relayURL
 			if relay == "" {
 				relay = cli.DefaultConfig().RelayURL
+			}
+			if relay == "" {
+				return fmt.Errorf("--relay flag is required (e.g. --relay wss://your-relay-server)")
 			}
 			return cli.Login(context.Background(), provider, relay, useDeviceCode)
 		},

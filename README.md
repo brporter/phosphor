@@ -18,7 +18,7 @@ Access to your machines is secured using federated credentials. The Phosphor hub
 
 Perfect for developers, system administrators, and enthusiasts who need terminal access to multiple machines without needing to expose those machines to the internet. Access your homelab or cloud resources from anywhere, without configuring VPN or exposing SSH ports to the open web!
 
-Phosphor is open source, and completely self-hostable. By default, phosphor connects to the hub at phosphor.betaporter.dev, but you can easily set up your own hub if you prefer.
+Phosphor is open source and completely self-hostable. You must specify a relay server using the `--relay` flag (e.g. `--relay wss://your-relay-server`). You can host your own Phosphor hub or use a shared one.
 
 # Getting Started
 To install Phosphor, download the latest release from the [releases page](https://github.com/brporter/phosphor/releases) that's appropriate for your operating system.
@@ -73,5 +73,5 @@ This associates the local user 'brporter' with the federated identity 'bryan@bry
 # Security
 Phosphor connects to the Phosphor hub using a secure WebSocket connection. The hub itself does not store any credentials. Phosphor instances running in daemon mode must leverage an API key to connect to a Phosphor hub. These API keys are JWT tokens issued by the Phosphor hub, and can be revoked by an administrator.
 
-By default, the Phosphor client connects to phosphor.betaporter.dev, but you can also self-host your own Phosphor hub if you prefer. Pass the `--relay` argument to Phosphor to connect a different hub.
+You must always specify the relay server using the `--relay` flag. You can self-host your own Phosphor hub or use a shared one.
 

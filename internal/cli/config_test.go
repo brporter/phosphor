@@ -6,8 +6,8 @@ import (
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.RelayURL != DefaultRelayURL {
-		t.Errorf("expected RelayURL %q, got %q", DefaultRelayURL, cfg.RelayURL)
+	if cfg.RelayURL != "" {
+		t.Errorf("expected empty RelayURL by default, got %q", cfg.RelayURL)
 	}
 }
 
