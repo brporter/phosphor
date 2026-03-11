@@ -20,6 +20,17 @@ Perfect for developers, system administrators, and enthusiasts who need terminal
 
 Phosphor is open source and completely self-hostable. You must specify a relay server using the `--relay` flag (e.g. `--relay wss://your-relay-server`). You can host your own Phosphor hub or use a shared one.
 
+# Important Note About Security
+Phosphor is designed with security in mind, but it is crucial to understand that the security of your terminal sessions is only as strong as the security of the relay.
+
+As there are no pre-shared secrets between your client and your machines, the relay server is *entirely* responsible for the security of your sessions.
+
+The connection between your machines and the relay is secured with TLS. The connections between your browser and the relay, or the Phosphor iOS app, are likewise secured with TLS. The relay server is a by-design man-in-the-middle. The process can see all the traffic that flows through it. If you connect to a malicious relay, the relay server will be able to see all traffic that flows through it, and if your machines are running phosphor in daemon mode, the relay could connect to your machines.
+
+The relay is phosphor.betaporter.dev is a shared relay server. I run it, personally. I'm happy to have my terminal sessions running through it. Should you run your terminal sessions through it? That's for you to decide. You'll have to decide if you trust the relay or not.
+
+I don't write the above to frighten anyone away from using Phosphor, but to be transparent about the security limitations of a terminal aggregation system like this. I'm also VERY open to design suggestions on how to improve this. Phosphor is open source, and you can always run Phosphor yourself, on a cheap (or possibly free, depending on the cloud provider) virtual private server.
+
 # Getting Started
 To install Phosphor, download the latest release from the [releases page](https://github.com/brporter/phosphor/releases) that's appropriate for your operating system.
 
@@ -44,7 +55,7 @@ Daemon mode is ideal for machines that need to be accessed by multiple users, an
 Read on for more information about the various modes.
 
 # Modes
-Phosphor supports two modes of operations
+Phosphor supports two modes of operations.
 
 ## Command Mode
 In this mode, you can either pipe the output of a process to Phosphor, in which case the session is read-only, or you can wrap the process in Phosphor for interactivity.
