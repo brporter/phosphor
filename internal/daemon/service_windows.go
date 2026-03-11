@@ -49,6 +49,18 @@ func Install(binaryPath string) error {
 	}
 	defer s.Close()
 
+	// Configure service recovery: restart on failure with increasing delays.
+	recoveryActions := []mgr.RecoveryAction{
+		{Type: mgr.ServiceRestart, Delay: 5 * time.Second},
+		{Type: mgr.ServiceRestart, Delay: 30 * time.Second},
+		{Type: mgr.ServiceRestart, Delay: 60 * time.Second},
+	}
+	if err := s.SetRecoveryActions(recoveryActions, 3600); err != nil {
+		// Non-fatal: log but continue — the service will still work,
+		// just without automatic restart on crash.
+		fmt.Fprintf(os.Stderr, "warning: could not set recovery actions: %v\n", err)
+	}
+
 	if err := s.Start(); err != nil {
 		return fmt.Errorf("start service: %w", err)
 	}
@@ -118,7 +130,9 @@ func (ps *phosphorService) Execute(args []string, r <-chan svc.ChangeRequest, ch
 				return false, 0
 			}
 		case <-done:
-			return false, 0
+			// daemon.Run() returned without being asked to stop —
+			// exit with non-zero code to trigger SCM recovery (auto-restart).
+			return false, 1
 		}
 	}
 }

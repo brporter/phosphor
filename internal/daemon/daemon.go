@@ -38,6 +38,12 @@ var backoffSchedule = []time.Duration{
 	30 * time.Second,
 }
 
+// keepalive constants
+const (
+	pingInterval = 30 * time.Second // how often to send pings
+	pongTimeout  = 15 * time.Second // how long to wait for pong after ping
+)
+
 // Daemon manages persistent relay connections for identity mappings.
 type Daemon struct {
 	Config     *Config
@@ -203,6 +209,7 @@ func (d *Daemon) runMapping(ctx context.Context, mapping Mapping) {
 			return
 		}
 
+		connStart := time.Now()
 		err := d.runConnection(ctx, mapping)
 		if ctx.Err() != nil {
 			return
@@ -232,6 +239,13 @@ func (d *Daemon) runMapping(ctx context.Context, mapping Mapping) {
 				"attempt", attempt,
 				"err", err,
 			)
+		}
+
+		// Reset backoff if the connection was alive long enough to have
+		// completed at least one keepalive cycle — this means it was a
+		// genuine session, not a connect-and-immediately-fail loop.
+		if time.Since(connStart) > pingInterval {
+			attempt = 0
 		}
 
 		delay := backoffSchedule[min(attempt, len(backoffSchedule)-1)]
@@ -336,7 +350,14 @@ func (d *Daemon) runConnection(ctx context.Context, mapping Mapping) error {
 		"view_url", welcome.ViewURL,
 	)
 
-	return d.readLoop(ctx, conn, mapping)
+	// Start keepalive ping goroutine — sends periodic pings to detect dead
+	// connections and keep the WebSocket alive through NAT/firewalls.
+	connCtx, connCancel := context.WithCancel(ctx)
+	defer connCancel()
+
+	go d.keepalive(connCtx, conn, mapping.Identity)
+
+	return d.readLoop(connCtx, conn, mapping)
 }
 
 // readLoop reads messages from the relay and dispatches them.
@@ -395,6 +416,41 @@ func (d *Daemon) readLoop(ctx context.Context, conn *websocket.Conn, mapping Map
 				"identity", mapping.Identity,
 				"type", fmt.Sprintf("0x%02x", msgType),
 			)
+		}
+	}
+}
+
+// keepalive sends periodic pings to detect dead connections and keep the
+// WebSocket alive through NAT/firewalls. If a ping write fails, it cancels
+// the connection context so the read loop exits.
+func (d *Daemon) keepalive(ctx context.Context, conn *websocket.Conn, identity string) {
+	ticker := time.NewTicker(pingInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			pingData, err := protocol.Encode(protocol.TypePing, nil)
+			if err != nil {
+				continue
+			}
+
+			// Use a short write deadline so we don't block forever
+			writeCtx, cancel := context.WithTimeout(ctx, pongTimeout)
+			err = conn.Write(writeCtx, websocket.MessageBinary, pingData)
+			cancel()
+
+			if err != nil {
+				d.Logger.Warn("keepalive ping failed, connection likely dead",
+					"identity", identity,
+					"err", err,
+				)
+				// Force-close the connection so readLoop returns an error
+				conn.CloseNow()
+				return
+			}
 		}
 	}
 }
