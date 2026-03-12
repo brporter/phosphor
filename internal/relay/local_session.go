@@ -28,6 +28,14 @@ type LocalSession struct {
 
 	cancelOutput func() // unsubscribe from output channel
 	cancelInput  func() // unsubscribe from input channel
+
+	// Resize priority tracking: the terminal that last received input
+	// dictates the PTY dimensions.
+	lastInputSource string // "cli" (default) or "viewer"
+	cliCols         int    // last known CLI terminal dimensions
+	cliRows         int
+	viewerCols      int // last known viewer terminal dimensions
+	viewerRows      int
 }
 
 // NewLocalSession creates a local session that hosts the CLI connection.
@@ -196,6 +204,63 @@ func (ls *LocalSession) GetScrollback() []byte {
 	buf := make([]byte, len(ls.scrollback))
 	copy(buf, ls.scrollback)
 	return buf
+}
+
+// SetLastInputSource records which end last sent keyboard input.
+func (ls *LocalSession) SetLastInputSource(source string) {
+	ls.mu.Lock()
+	ls.lastInputSource = source
+	ls.mu.Unlock()
+}
+
+// GetLastInputSource returns "cli" or "viewer" (defaults to "cli" if unset).
+func (ls *LocalSession) GetLastInputSource() string {
+	ls.mu.RLock()
+	defer ls.mu.RUnlock()
+	if ls.lastInputSource == "" {
+		return "cli"
+	}
+	return ls.lastInputSource
+}
+
+// SetCLIDims stores the CLI's local terminal dimensions.
+func (ls *LocalSession) SetCLIDims(cols, rows int) {
+	ls.mu.Lock()
+	ls.cliCols = cols
+	ls.cliRows = rows
+	ls.mu.Unlock()
+}
+
+// GetCLIDims returns the CLI's last reported terminal dimensions.
+func (ls *LocalSession) GetCLIDims() (int, int) {
+	ls.mu.RLock()
+	defer ls.mu.RUnlock()
+	return ls.cliCols, ls.cliRows
+}
+
+// SetViewerDims stores the active viewer's terminal dimensions.
+func (ls *LocalSession) SetViewerDims(cols, rows int) {
+	ls.mu.Lock()
+	ls.viewerCols = cols
+	ls.viewerRows = rows
+	ls.mu.Unlock()
+}
+
+// GetViewerDims returns the viewer's last reported terminal dimensions.
+func (ls *LocalSession) GetViewerDims() (int, int) {
+	ls.mu.RLock()
+	defer ls.mu.RUnlock()
+	return ls.viewerCols, ls.viewerRows
+}
+
+// ResetInputSourceIfNoViewers resets the input source to "cli" when
+// the last viewer disconnects.
+func (ls *LocalSession) ResetInputSourceIfNoViewers() {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	if len(ls.viewers) == 0 {
+		ls.lastInputSource = "cli"
+	}
 }
 
 // Close sends TypeEnd to viewers, closes connections, and unsubscribes from bus.

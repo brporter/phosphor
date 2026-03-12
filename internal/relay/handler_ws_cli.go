@@ -173,6 +173,11 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	// Initialize CLI dimensions on the local session for resize priority tracking.
+	if ls, ok := s.hub.GetLocal(sessionID); ok {
+		ls.SetCLIDims(hello.Cols, hello.Rows)
+	}
+
 	// Read loop: forward CLI output to viewers
 	for {
 		_, data, err := conn.Read(ctx)
@@ -196,13 +201,44 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 			if ls, ok := s.hub.GetLocal(sessionID); ok {
 				ls.AppendScrollback(payload)
 			}
+		case protocol.TypeStdin:
+			// Local keyboard input notification from CLI — update resize priority.
+			if ls, ok := s.hub.GetLocal(sessionID); ok {
+				prev := ls.GetLastInputSource()
+				ls.SetLastInputSource("cli")
+				if prev == "viewer" {
+					// Switching from viewer→CLI priority: restore CLI dimensions.
+					cc, cr := ls.GetCLIDims()
+					if cc > 0 && cr > 0 {
+						s.hub.store.UpdateDimensions(ctx, sessionID, cc, cr)
+						correction := protocol.Resize{Cols: cc, Rows: cr}
+						encoded, _ := protocol.Encode(protocol.TypeResize, correction)
+						ls.SendToCLI(ctx, encoded)
+						s.hub.BroadcastOutput(ctx, sessionID, encoded)
+					}
+				}
+			}
 		case protocol.TypeResize:
 			var sz protocol.Resize
 			if err := protocol.DecodeJSON(payload, &sz); err == nil {
-				s.hub.store.UpdateDimensions(ctx, sessionID, sz.Cols, sz.Rows)
-				encoded, err := protocol.Encode(protocol.TypeResize, sz)
-				if err == nil {
-					s.hub.BroadcastOutput(ctx, sessionID, encoded)
+				if ls, ok := s.hub.GetLocal(sessionID); ok {
+					ls.SetCLIDims(sz.Cols, sz.Rows)
+					if ls.GetLastInputSource() == "viewer" {
+						// Viewer has priority — send back viewer dims to correct CLI PTY.
+						vc, vr := ls.GetViewerDims()
+						if vc > 0 && vr > 0 {
+							correction := protocol.Resize{Cols: vc, Rows: vr}
+							encoded, _ := protocol.Encode(protocol.TypeResize, correction)
+							ls.SendToCLI(ctx, encoded)
+						}
+					} else {
+						// CLI has priority — update authoritative dims, broadcast to viewers.
+						s.hub.store.UpdateDimensions(ctx, sessionID, sz.Cols, sz.Rows)
+						encoded, err := protocol.Encode(protocol.TypeResize, sz)
+						if err == nil {
+							s.hub.BroadcastOutput(ctx, sessionID, encoded)
+						}
+					}
 				}
 			}
 		case protocol.TypeProcessExited:

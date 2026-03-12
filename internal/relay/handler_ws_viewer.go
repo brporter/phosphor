@@ -91,6 +91,21 @@ func (s *Server) HandleViewerWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() {
 		ls.RemoveViewer(viewerID)
+		prevSource := ls.GetLastInputSource()
+		ls.ResetInputSourceIfNoViewers()
+		// When the last viewer disconnects and viewer had priority,
+		// restore the CLI's terminal dimensions to the PTY.
+		if prevSource == "viewer" && ls.ViewerCount() == 0 {
+			cc, cr := ls.GetCLIDims()
+			if cc > 0 && cr > 0 {
+				s.hub.store.UpdateDimensions(ctx, join.SessionID, cc, cr)
+				resize := protocol.Resize{Cols: cc, Rows: cr}
+				encoded, err := protocol.Encode(protocol.TypeResize, resize)
+				if err == nil {
+					ls.SendToCLI(ctx, encoded)
+				}
+			}
+		}
 		ls.NotifyViewerCount(ctx)
 		s.hub.CleanupViewerLocal(join.SessionID)
 	}()
@@ -143,19 +158,43 @@ func (s *Server) HandleViewerWebSocket(w http.ResponseWriter, r *http.Request) {
 		switch msgType {
 		case protocol.TypeStdin:
 			if info.Mode == "pty" {
+				// Mark viewer as the active input source for resize priority.
+				ls.SetLastInputSource("viewer")
+
 				encoded, err := protocol.Encode(protocol.TypeStdin, payload)
 				if err == nil {
 					s.hub.SendInput(ctx, join.SessionID, encoded)
+				}
+
+				// If switching to viewer priority, send viewer dims to CLI.
+				vc, vr := ls.GetViewerDims()
+				if vc > 0 && vr > 0 {
+					cc, cr := ls.GetCLIDims()
+					if vc != cc || vr != cr {
+						resize := protocol.Resize{Cols: vc, Rows: vr}
+						resizeData, err := protocol.Encode(protocol.TypeResize, resize)
+						if err == nil {
+							s.hub.SendInput(ctx, join.SessionID, resizeData)
+						}
+						s.hub.store.UpdateDimensions(ctx, join.SessionID, vc, vr)
+					}
 				}
 			}
 			// In pipe mode, stdin from viewers is silently dropped
 		case protocol.TypeResize:
 			var sz protocol.Resize
 			if err := protocol.DecodeJSON(payload, &sz); err == nil {
-				encoded, err := protocol.Encode(protocol.TypeResize, sz)
-				if err == nil {
-					s.hub.SendInput(ctx, join.SessionID, encoded)
+				ls.SetViewerDims(sz.Cols, sz.Rows)
+
+				if ls.GetLastInputSource() == "viewer" {
+					// Viewer has priority — forward resize to CLI.
+					encoded, err := protocol.Encode(protocol.TypeResize, sz)
+					if err == nil {
+						s.hub.SendInput(ctx, join.SessionID, encoded)
+					}
+					s.hub.store.UpdateDimensions(ctx, join.SessionID, sz.Cols, sz.Rows)
 				}
+				// If CLI has priority, viewer resize is stored but not forwarded.
 			}
 		case protocol.TypeRestart:
 			s.hub.RestartProcess(ctx, join.SessionID)

@@ -97,6 +97,10 @@ func (a *App) runWithProcess(appCtx context.Context, appCancel context.CancelFun
 	var proc io.ReadWriteCloser
 	var ptyProc PTYProcess
 
+	// wsNotifier lets the stdin reader and resize watcher send messages to the
+	// relay. The active connection is set/cleared in runConnection.
+	notifier := &wsNotifier{}
+
 	processExited := make(chan int, 1)
 
 	if a.Mode == "pty" {
@@ -122,13 +126,14 @@ func (a *App) runWithProcess(appCtx context.Context, appCancel context.CancelFun
 			}
 		}
 
-		// Local stdin → PTY
+		// Local stdin → PTY (+ notify relay of local input activity)
 		go func() {
 			buf := make([]byte, 1024)
 			for {
 				n, err := os.Stdin.Read(buf)
 				if n > 0 {
 					proc.Write(buf[:n])
+					notifier.NotifyLocalInput()
 					// Ctrl+C (0x03) in raw mode: shut down phosphor
 					if bytes.IndexByte(buf[:n], 0x03) >= 0 {
 						appCancel()
@@ -142,7 +147,7 @@ func (a *App) runWithProcess(appCtx context.Context, appCancel context.CancelFun
 		}()
 
 		// Watch for local terminal resize (SIGWINCH on Unix, no-op on Windows)
-		go watchTerminalResize(appCtx, p)
+		go watchTerminalResize(appCtx, p, notifier)
 
 		go func() {
 			exitCode, waitErr := p.Wait(appCtx)
@@ -162,7 +167,7 @@ func (a *App) runWithProcess(appCtx context.Context, appCancel context.CancelFun
 	attempt := 0
 
 	for {
-		result := a.runConnection(appCtx, proc, ptyProc, cols, rows, sessionID, reconnectToken, processExited)
+		result := a.runConnection(appCtx, proc, ptyProc, cols, rows, sessionID, reconnectToken, processExited, notifier)
 
 		if result.processExited {
 			switch a.Restart {
@@ -223,6 +228,7 @@ func (a *App) runConnection(
 	cols, rows int,
 	sessionID, reconnectToken *string,
 	processExited <-chan int,
+	notifier *wsNotifier,
 ) connectionResult {
 	a.Logger.Info("connecting to relay", "url", a.Config.RelayURL)
 
@@ -283,6 +289,10 @@ func (a *App) runConnection(
 	// connCtx scoped to this single connection.
 	connCtx, connCancel := context.WithCancel(appCtx)
 	defer connCancel()
+
+	// Activate the notifier so stdin reader and resize watcher can send to relay.
+	notifier.Set(ws, connCtx)
+	defer notifier.Clear()
 
 	procDead := make(chan struct{})
 	connLost := make(chan struct{})

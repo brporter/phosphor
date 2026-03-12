@@ -163,6 +163,11 @@ func (s *Server) HandleAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		params.Set("response_mode", "form_post")
 	}
 
+	// Microsoft-specific: always show account picker
+	if sess.Provider == "microsoft" {
+		params.Set("prompt", "select_account")
+	}
+
 	target := authEndpoint + "?" + params.Encode()
 	http.Redirect(w, r, target, http.StatusFound)
 }
