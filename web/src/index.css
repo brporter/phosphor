@@ -19,7 +19,7 @@
   --bg-card-crt: #0a120a;
   --bg-panel-crt: #0a1a0a;
   --border-crt: #0a3a0a;
-  --text-dim: #0a5a0a;
+  --text-dim: #1a8a1a;
 }
 
 * {
@@ -178,10 +178,21 @@ button:hover {
 
 /* Status bar */
 .status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   background: var(--bg-panel-crt);
   border: 1px solid var(--border-crt);
   padding: 6px 10px;
   font-size: 11px;
+}
+
+/* Focus states for borderless buttons */
+.btn-action:focus-visible,
+.btn-danger:focus-visible,
+.btn-primary:focus-visible {
+  outline: 1px solid var(--green);
+  outline-offset: 2px;
 }
 
 /* Section heading */

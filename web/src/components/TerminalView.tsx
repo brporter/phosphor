@@ -157,14 +157,7 @@ export function TerminalView() {
       }}
     >
       {/* Status bar */}
-      <div
-        className="status-bar"
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
+      <div className="status-bar">
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <Link to="/" style={{ color: "#00aa33", textDecoration: "none" }}>
             &larr; sessions
