@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -27,6 +28,10 @@ type PTYProcess interface {
 // SpawnFunc is the function signature for spawning a PTY as a local user.
 // Implemented per-platform in spawn_unix.go and spawn_windows.go.
 type SpawnFunc func(shell string, localUser string) (PTYProcess, int, int, error)
+
+// errSessionEnded is returned by readLoop when the relay sends TypeEnd,
+// indicating the session was destroyed (e.g. grace period expired).
+var errSessionEnded = fmt.Errorf("session ended by relay")
 
 // backoff durations for reconnect attempts.
 var backoffSchedule = []time.Duration{
@@ -213,6 +218,21 @@ func (d *Daemon) runMapping(ctx context.Context, mapping Mapping) {
 		err := d.runConnection(ctx, mapping)
 		if ctx.Err() != nil {
 			return
+		}
+
+		if errors.Is(err, errSessionEnded) {
+			// Session was destroyed (e.g. grace period expired).
+			// Clear session state so next connection creates a fresh session.
+			ms := d.getSession(mapping.Identity)
+			if ms != nil {
+				ms.mu.Lock()
+				ms.sessionID = ""
+				ms.reconnectToken = ""
+				ms.mu.Unlock()
+			}
+			d.Logger.Info("session ended, will create fresh session", "identity", mapping.Identity)
+			attempt = 0
+			continue
 		}
 
 		if err != nil {
@@ -402,8 +422,8 @@ func (d *Daemon) readLoop(ctx context.Context, conn *websocket.Conn, mapping Map
 			}
 
 		case protocol.TypeEnd:
-			d.Logger.Info("session ended by relay", "identity", mapping.Identity)
-			return nil
+			d.Logger.Info("session ended by relay, will reconnect with fresh session", "identity", mapping.Identity)
+			return errSessionEnded
 
 		case protocol.TypeViewerCount:
 			var vc protocol.ViewerCount
