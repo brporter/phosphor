@@ -75,6 +75,14 @@ export function TerminalView() {
 
     term.open(containerRef.current);
 
+    // Prevent browser from swallowing Escape (it would blur the hidden textarea)
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+      }
+      return true;
+    });
+
     // Try WebGL renderer
     try {
       term.loadAddon(new WebglAddon());
