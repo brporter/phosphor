@@ -63,7 +63,7 @@ func newTestAuthServer(t *testing.T) *Server {
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
 
-	return NewServer(hub, slog.Default(), "http://localhost:8080", verifier, true, authSessions, nil, NewBlocklist(""))
+	return NewServer(hub, slog.Default(), "http://localhost:8080", verifier, true, authSessions, nil, NewBlocklist(""), 60*time.Second)
 }
 
 // --- PKCE helper tests ---

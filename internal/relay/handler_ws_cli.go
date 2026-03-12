@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/subtle"
 	"net/http"
-	"time"
 
 	"github.com/coder/websocket"
 	gonanoid "github.com/matoous/go-nanoid/v2"
@@ -137,7 +136,7 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 		conn.Write(ctx, websocket.MessageBinary, welcomeData)
 	}
 
-	defer s.hub.Disconnect(ctx, sessionID, 60*time.Second)
+	defer s.hub.Disconnect(ctx, sessionID, s.gracePeriod)
 
 	// Read loop: forward CLI output to viewers
 	for {

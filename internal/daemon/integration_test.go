@@ -114,7 +114,7 @@ func TestIntegration_DaemonRelayViewer(t *testing.T) {
 	})
 	verifier := auth.NewVerifier(slog.Default())
 	authSessions := relay.NewMemoryAuthSessionStore(5 * time.Minute)
-	srv := relay.NewServer(hub, slog.Default(), "http://test", verifier, true, authSessions, nil, relay.NewBlocklist(""))
+	srv := relay.NewServer(hub, slog.Default(), "http://test", verifier, true, authSessions, nil, relay.NewBlocklist(""), 60*time.Second)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 	defer authSessions.Stop()

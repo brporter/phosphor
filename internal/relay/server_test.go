@@ -24,7 +24,7 @@ func TestNewServer(t *testing.T) {
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
 
-	srv := NewServer(hub, logger, baseURL, verifier, devMode, authSessions, nil, NewBlocklist(""))
+	srv := NewServer(hub, logger, baseURL, verifier, devMode, authSessions, nil, NewBlocklist(""), 60*time.Second)
 
 	if srv == nil {
 		t.Fatal("expected non-nil server")
@@ -49,7 +49,7 @@ func TestHandler_HealthEndpoint(t *testing.T) {
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
 
-	srv := NewServer(hub, slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true, authSessions, nil, NewBlocklist(""))
+	srv := NewServer(hub, slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true, authSessions, nil, NewBlocklist(""), 60*time.Second)
 
 	handler := srv.Handler()
 
@@ -72,7 +72,7 @@ func TestHandler_RoutesExist(t *testing.T) {
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
 
-	srv := NewServer(hub, slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true, authSessions, nil, NewBlocklist(""))
+	srv := NewServer(hub, slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true, authSessions, nil, NewBlocklist(""), 60*time.Second)
 
 	handler := srv.Handler()
 
@@ -97,5 +97,22 @@ func TestHandler_RoutesExist(t *testing.T) {
 				t.Errorf("route %s %s returned 404, expected non-404", tc.method, tc.path)
 			}
 		})
+	}
+}
+
+func TestNewServer_GracePeriod(t *testing.T) {
+	store := NewMemorySessionStore()
+	hub := NewHub(store, nil, "test", slog.Default())
+	store.SetExpiryCallback(func(ctx context.Context, id string) {
+		hub.Unregister(ctx, id)
+	})
+	logger := slog.Default()
+	verifier := auth.NewVerifier(slog.Default())
+	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
+	t.Cleanup(authSessions.Stop)
+
+	srv := NewServer(hub, logger, "http://test", verifier, true, authSessions, nil, NewBlocklist(""), 10*time.Minute)
+	if srv.gracePeriod != 10*time.Minute {
+		t.Errorf("gracePeriod = %v, want %v", srv.gracePeriod, 10*time.Minute)
 	}
 }

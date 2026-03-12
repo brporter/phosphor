@@ -35,6 +35,16 @@ func main() {
 
 	devMode := os.Getenv("DEV_MODE") != ""
 
+	gracePeriod := 5 * time.Minute
+	if gp := os.Getenv("GRACE_PERIOD"); gp != "" {
+		parsed, err := time.ParseDuration(gp)
+		if err != nil {
+			logger.Error("invalid GRACE_PERIOD", "value", gp, "err", err)
+			os.Exit(1)
+		}
+		gracePeriod = parsed
+	}
+
 	// Set up OIDC verifier (providers configured via env vars)
 	verifier := auth.NewVerifier(logger)
 
@@ -163,7 +173,7 @@ func main() {
 	blocklist := relay.NewBlocklist(revocationFile)
 	defer blocklist.Stop()
 
-	srv := relay.NewServer(hub, logger, baseURL, verifier, devMode, authSessions, apiKeySecret, blocklist)
+	srv := relay.NewServer(hub, logger, baseURL, verifier, devMode, authSessions, apiKeySecret, blocklist, gracePeriod)
 
 	httpServer := &http.Server{
 		Addr:         addr,
@@ -177,7 +187,7 @@ func main() {
 	defer cancel()
 
 	go func() {
-		logger.Info("relay server starting", "addr", addr, "base_url", baseURL, "dev_mode", devMode, "relay_id", relayID, "redis", os.Getenv("REDIS_URL") != "")
+		logger.Info("relay server starting", "addr", addr, "base_url", baseURL, "dev_mode", devMode, "relay_id", relayID, "redis", os.Getenv("REDIS_URL") != "", "grace_period", gracePeriod)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("server error", "err", err)
 			cancel()

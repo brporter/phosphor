@@ -25,7 +25,7 @@ func newWSTestServer(t *testing.T) (*Server, *httptest.Server) {
 	})
 	verifier := auth.NewVerifier(slog.Default())
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
-	srv := NewServer(hub, slog.Default(), "http://test", verifier, true, authSessions, nil, NewBlocklist(""))
+	srv := NewServer(hub, slog.Default(), "http://test", verifier, true, authSessions, nil, NewBlocklist(""), 60*time.Second)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	t.Cleanup(authSessions.Stop)
