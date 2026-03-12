@@ -45,6 +45,8 @@ const (
 	cliPingTimeout  = 15 * time.Second
 )
 
+const maxReconnectDuration = 3 * time.Minute
+
 // connectionResult is the structured result from a single connection attempt.
 type connectionResult struct {
 	err           error
@@ -52,6 +54,7 @@ type connectionResult struct {
 	exitCode      int
 	restarted     bool // true if we received TypeRestart (manual mode)
 	authFailed    bool // relay rejected our token
+	wasConnected  bool // true if the handshake succeeded before disconnecting
 }
 
 // Run starts the CLI session with restart support.
@@ -165,6 +168,7 @@ func (a *App) runWithProcess(appCtx context.Context, appCancel context.CancelFun
 	}
 
 	attempt := 0
+	var retryStart time.Time
 
 	for {
 		result := a.runConnection(appCtx, proc, ptyProc, cols, rows, sessionID, reconnectToken, processExited, notifier)
@@ -188,6 +192,12 @@ func (a *App) runWithProcess(appCtx context.Context, appCancel context.CancelFun
 			return nil
 		}
 
+		// Reset retry state after a successful connection that later dropped
+		if result.wasConnected {
+			attempt = 0
+			retryStart = time.Time{}
+		}
+
 		// Auth rejected — try browser login once, then retry
 		if result.authFailed && attempt == 0 {
 			fmt.Fprintf(os.Stderr, "Authentication required.\r\n")
@@ -203,10 +213,26 @@ func (a *App) runWithProcess(appCtx context.Context, appCancel context.CancelFun
 			continue
 		}
 
-		// Connection lost — retry with backoff
+		// Connection lost — retry with backoff (3-minute deadline)
+		if retryStart.IsZero() {
+			retryStart = time.Now()
+			fmt.Fprintf(os.Stderr, "Relay connection failed. Will retry for up to 3 minutes...\r\n")
+		}
+
+		elapsed := time.Since(retryStart)
+		if elapsed >= maxReconnectDuration {
+			fmt.Fprintf(os.Stderr, "Failed to connect to relay after 3 minutes. Exiting.\r\n")
+			return fmt.Errorf("relay connection failed: retry timeout exceeded")
+		}
+
 		delay := backoffSchedule[min(attempt, len(backoffSchedule)-1)]
+		remaining := maxReconnectDuration - elapsed
+		if delay > remaining {
+			delay = remaining
+		}
+
 		attempt++
-		fmt.Fprintf(os.Stderr, "Relay disconnected. Reconnecting in %s...\r\n", delay)
+		fmt.Fprintf(os.Stderr, "Reconnecting in %s...\r\n", delay.Round(time.Second))
 		a.Logger.Info("relay disconnected, will retry", "delay", delay, "attempt", attempt)
 
 		select {
@@ -427,9 +453,9 @@ func (a *App) runConnection(
 				exitCode = code
 			default:
 			}
-			return connectionResult{processExited: true, exitCode: exitCode}
+			return connectionResult{processExited: true, exitCode: exitCode, wasConnected: true}
 		default:
-			return connectionResult{err: fmt.Errorf("connection lost")}
+			return connectionResult{err: fmt.Errorf("connection lost"), wasConnected: true}
 		}
 	case <-appCtx.Done():
 		return connectionResult{}
