@@ -4,10 +4,16 @@ import (
 	"context"
 	"crypto/subtle"
 	"net/http"
+	"time"
 
 	"github.com/coder/websocket"
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/brporter/phosphor/internal/protocol"
+)
+
+const (
+	relayPingInterval = 30 * time.Second
+	relayPingTimeout  = 15 * time.Second
 )
 
 // HandleCLIWebSocket handles WebSocket connections from the CLI.
@@ -137,6 +143,35 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	defer s.hub.Disconnect(ctx, sessionID, s.gracePeriod)
+
+	// Start server-side keepalive pings to detect dead CLI connections
+	// and keep WebSocket alive through NAT/firewalls.
+	connCtx, connCancel := context.WithCancel(ctx)
+	defer connCancel()
+
+	go func() {
+		ticker := time.NewTicker(relayPingInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-connCtx.Done():
+				return
+			case <-ticker.C:
+				pingData, err := protocol.Encode(protocol.TypePing, nil)
+				if err != nil {
+					continue
+				}
+				writeCtx, cancel := context.WithTimeout(connCtx, relayPingTimeout)
+				err = conn.Write(writeCtx, websocket.MessageBinary, pingData)
+				cancel()
+				if err != nil {
+					s.logger.Info("cli keepalive ping failed", "session", sessionID, "err", err)
+					conn.CloseNow()
+					return
+				}
+			}
+		}
+	}()
 
 	// Read loop: forward CLI output to viewers
 	for {
