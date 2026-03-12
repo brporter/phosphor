@@ -8,7 +8,13 @@ export function SessionList() {
 
   if (isLoading) {
     return (
-      <div style={{ color: "var(--green)", padding: 16 }}>
+      <div
+        style={{
+          color: "var(--green)",
+          textShadow: "0 0 6px rgba(0,255,65,0.4)",
+          padding: 16,
+        }}
+      >
         Loading sessions...
       </div>
     );
@@ -16,7 +22,15 @@ export function SessionList() {
 
   if (error) {
     return (
-      <div style={{ color: "var(--red)", padding: 16 }}>Error: {error}</div>
+      <div
+        style={{
+          color: "var(--red)",
+          textShadow: "0 0 6px rgba(255,51,51,0.4)",
+          padding: 16,
+        }}
+      >
+        Error: {error}
+      </div>
     );
   }
 
@@ -33,7 +47,13 @@ export function SessionList() {
           color: "var(--text)",
         }}
       >
-        <pre style={{ color: "var(--green-dim)", fontSize: 13 }}>
+        <pre
+          style={{
+            color: "var(--green-dim)",
+            fontSize: 13,
+            textShadow: "0 0 6px rgba(0,255,65,0.4)",
+          }}
+        >
           {`$ phosphor -- bash
 Session live: http://localhost:8080/session/abc123`}
         </pre>
@@ -42,8 +62,8 @@ Session live: http://localhost:8080/session/abc123`}
         </p>
         <code
           style={{
-            background: "var(--bg-card)",
-            border: "1px solid var(--border)",
+            background: "var(--bg-card-crt)",
+            border: "1px solid var(--border-crt)",
             padding: "8px 16px",
             color: "var(--amber)",
           }}
@@ -56,17 +76,13 @@ Session live: http://localhost:8080/session/abc123`}
 
   return (
     <div>
-      <h2
-        style={{
-          color: "var(--green)",
-          fontSize: 14,
-          marginBottom: 16,
-          fontWeight: 500,
-        }}
+      <div
+        className="section-heading"
+        style={{ marginBottom: 16 }}
       >
-        Active Sessions [{sessions.length}]
-      </h2>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        // ACTIVE SESSIONS =============== [{sessions.length}]
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {sessions.map((s) => (
           <SessionCard key={s.id} session={s} token={getToken()} onDestroyed={refresh} />
         ))}

@@ -20,8 +20,8 @@ export function Layout() {
           alignItems: "center",
           justifyContent: "space-between",
           padding: "8px 16px",
-          borderBottom: "1px solid var(--border)",
-          background: "var(--bg-panel)",
+          borderBottom: "1px solid var(--border-crt)",
+          background: "var(--bg-panel-crt)",
           flexShrink: 0,
         }}
       >
@@ -32,10 +32,10 @@ export function Layout() {
             fontWeight: 700,
             color: "var(--green)",
             textDecoration: "none",
-            textShadow: "0 0 10px var(--green-glow)",
+            textShadow: "0 0 12px rgba(0, 255, 65, 0.5)",
           }}
         >
-          {">"} phosphor
+          {">_"} phosphor
         </Link>
 
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -43,22 +43,24 @@ export function Layout() {
             href="https://github.com/brporter/phosphor/releases"
             target="_blank"
             rel="noopener noreferrer"
-            style={{ color: "var(--text)", fontSize: 12, textDecoration: "none" }}
+            style={{ color: "#00aa33", fontSize: 12, textDecoration: "none" }}
           >
             releases
           </a>
           {user ? (
             <>
-              <span style={{ color: "var(--text)", fontSize: 12 }}>
+              <span style={{ color: "#00aa33", fontSize: 12 }}>
                 {user.profile?.email ?? user.profile?.sub ?? "signed in"}
               </span>
               <Link
                 to="/settings"
-                style={{ color: "var(--text)", fontSize: 12, textDecoration: "none" }}
+                style={{ color: "#00aa33", fontSize: 12, textDecoration: "none" }}
               >
                 settings
               </Link>
-              <button onClick={() => void logout()}>logout</button>
+              <button className="btn-action" onClick={() => void logout()}>
+                [logout]
+              </button>
             </>
           ) : (
             <ProviderButtons providers={providers} login={login} />
@@ -75,9 +77,9 @@ export function Layout() {
       <footer
         style={{
           padding: "4px 16px",
-          borderTop: "1px solid var(--border)",
+          borderTop: "1px solid var(--border-crt)",
           fontSize: 11,
-          color: "var(--border)",
+          color: "var(--text-dim)",
           textAlign: "center",
           flexShrink: 0,
         }}

@@ -15,6 +15,11 @@
   --red: #ff3333;
   --cyan: #00e5ff;
   --font-mono: "Fira Code", "Cascadia Code", "JetBrains Mono", monospace;
+  --bg-crt: #050808;
+  --bg-card-crt: #0a120a;
+  --bg-panel-crt: #0a1a0a;
+  --border-crt: #0a3a0a;
+  --text-dim: #0a5a0a;
 }
 
 * {
@@ -27,7 +32,7 @@ html,
 body,
 #root {
   height: 100%;
-  background: var(--bg);
+  background: var(--bg-crt);
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 14px;
@@ -43,8 +48,8 @@ body::after {
     0deg,
     transparent,
     transparent 2px,
-    rgba(0, 0, 0, 0.03) 2px,
-    rgba(0, 0, 0, 0.03) 4px
+    rgba(0, 255, 65, 0.015) 2px,
+    rgba(0, 255, 65, 0.015) 4px
   );
   pointer-events: none;
   z-index: 9999;
@@ -55,10 +60,10 @@ body::after {
   width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg);
+  background: var(--bg-crt);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--border-crt);
   border-radius: 3px;
 }
 
@@ -73,22 +78,116 @@ a:hover {
 button {
   font-family: var(--font-mono);
   cursor: pointer;
-  border: 1px solid var(--border);
-  background: var(--bg-card);
+  border: 1px solid var(--border-crt);
+  background: var(--bg-card-crt);
   color: var(--text-bright);
   padding: 8px 16px;
   font-size: 13px;
   transition: all 0.15s;
 }
 button:hover {
-  border-color: var(--green-dim);
-  box-shadow: 0 0 8px var(--green-glow);
+  border-color: #0a5a0a;
+  box-shadow: 0 0 8px rgba(0, 255, 65, 0.15);
 }
 
-.btn-primary {
-  border-color: var(--green-dim);
+/* Badges */
+.badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 2px 8px;
+  font-family: var(--font-mono);
+}
+.badge-green {
   color: var(--green);
+  background: rgba(0, 255, 65, 0.08);
+  text-shadow: 0 0 4px rgba(0, 255, 65, 0.3);
+}
+.badge-amber {
+  color: var(--amber);
+  background: rgba(255, 176, 0, 0.08);
+  text-shadow: 0 0 4px rgba(255, 176, 0, 0.3);
+}
+.badge-red {
+  color: var(--red);
+  background: rgba(255, 51, 51, 0.08);
+  text-shadow: 0 0 4px rgba(255, 51, 51, 0.3);
+}
+
+/* Action buttons */
+.btn-action {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 3px 10px;
+  background: transparent;
+  border: none;
+  color: #00aa33;
+  text-shadow: 0 0 4px rgba(0, 255, 65, 0.3);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-action:hover {
+  color: var(--green);
+  text-shadow: 0 0 8px rgba(0, 255, 65, 0.5);
+  box-shadow: none;
+}
+.btn-danger {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 3px 10px;
+  background: transparent;
+  border: none;
+  color: var(--red);
+  text-shadow: 0 0 4px rgba(255, 51, 51, 0.3);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-danger:hover {
+  color: #ff6666;
+  text-shadow: 0 0 8px rgba(255, 51, 51, 0.5);
+  box-shadow: none;
+}
+.btn-primary {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 3px 10px;
+  background: rgba(0, 255, 65, 0.08);
+  border: none;
+  color: var(--green);
+  text-shadow: 0 0 4px rgba(0, 255, 65, 0.3);
+  cursor: pointer;
+  transition: all 0.15s;
 }
 .btn-primary:hover {
-  background: var(--green-glow);
+  background: rgba(0, 255, 65, 0.15);
+  text-shadow: 0 0 8px rgba(0, 255, 65, 0.5);
+  box-shadow: none;
+}
+
+/* CRT Card */
+.card-crt {
+  background: var(--bg-card-crt);
+  border: 1px solid var(--border-crt);
+  box-shadow: inset 0 0 20px rgba(0, 255, 65, 0.02);
+  padding: 10px 14px;
+  transition: all 0.15s;
+}
+.card-crt:hover {
+  border-color: #0a5a0a;
+  box-shadow: inset 0 0 20px rgba(0, 255, 65, 0.02), 0 0 12px rgba(0, 255, 65, 0.08);
+}
+
+/* Status bar */
+.status-bar {
+  background: var(--bg-panel-crt);
+  border: 1px solid var(--border-crt);
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
+/* Section heading */
+.section-heading {
+  font-size: 11px;
+  color: var(--green);
+  text-shadow: 0 0 6px rgba(0, 255, 65, 0.4);
+  letter-spacing: 1px;
 }

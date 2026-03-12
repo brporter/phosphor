@@ -1,12 +1,12 @@
 const PROVIDER_LABELS: Record<string, string> = {
-  microsoft: "sign in with Microsoft",
-  google: "sign in with Google",
-  apple: "sign in with Apple",
-  dev: "dev mode",
+  microsoft: "[sign in with Microsoft]",
+  google: "[sign in with Google]",
+  apple: "[sign in with Apple]",
+  dev: "[dev mode]",
 };
 
 function providerLabel(provider: string): string {
-  return PROVIDER_LABELS[provider] ?? `sign in with ${provider}`;
+  return PROVIDER_LABELS[provider] ?? `[sign in with ${provider}]`;
 }
 
 interface ProviderButtonsProps {
@@ -20,7 +20,7 @@ export function ProviderButtons({ providers, login }: ProviderButtonsProps) {
       {providers.map((p, i) => (
         <button
           key={p}
-          className={i === 0 ? "btn-primary" : undefined}
+          className={i === 0 ? "btn-primary" : "btn-action"}
           onClick={() => void login(p)}
         >
           {providerLabel(p)}

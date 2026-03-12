@@ -44,10 +44,10 @@ export function TerminalView() {
       fontFamily: '"Fira Code", "Cascadia Code", monospace',
       fontSize: 14,
       theme: {
-        background: "#0a0a0a",
+        background: "#050808",
         foreground: "#b0b0b0",
         cursor: "#00ff41",
-        cursorAccent: "#0a0a0a",
+        cursorAccent: "#050808",
         selectionBackground: "rgba(0, 255, 65, 0.2)",
         black: "#0a0a0a",
         red: "#ff3333",
@@ -158,37 +158,42 @@ export function TerminalView() {
     >
       {/* Status bar */}
       <div
+        className="status-bar"
         style={{
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          fontSize: 12,
         }}
       >
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <Link to="/" style={{ color: "var(--text)" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <Link to="/" style={{ color: "#00aa33", textDecoration: "none" }}>
             &larr; sessions
           </Link>
           {joined && (
-            <span style={{ color: "var(--amber)" }}>
+            <span
+              style={{
+                color: "var(--amber)",
+                textShadow: "0 0 4px rgba(255,176,0,0.3)",
+              }}
+            >
               {joined.command || joined.mode}
             </span>
           )}
         </div>
-        <div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {processExited !== null ? (
-            <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <span style={{ color: "var(--amber)" }}>process exited ({processExited})</span>
-              <button onClick={sendRestart}>restart</button>
-            </span>
+            <>
+              <span className="badge badge-amber">[exited ({processExited})]</span>
+              <button className="btn-action" onClick={sendRestart}>[restart]</button>
+            </>
           ) : ended ? (
-            <span style={{ color: "var(--red)" }}>disconnected</span>
+            <span className="badge badge-red">[disconnected]</span>
           ) : connected ? (
-            <span style={{ color: "var(--green)" }}>connected</span>
+            <span className="badge badge-green">[connected]</span>
           ) : error ? (
-            <span style={{ color: "var(--red)" }}>{error}</span>
+            <span className="badge badge-red">[{error}]</span>
           ) : (
-            <span style={{ color: "var(--amber)" }}>connecting...</span>
+            <span className="badge badge-amber">[connecting...]</span>
           )}
         </div>
       </div>
@@ -198,15 +203,15 @@ export function TerminalView() {
         ref={containerRef}
         style={{
           flex: 1,
-          border: "1px solid var(--border)",
-          background: "#0a0a0a",
+          border: "1px solid var(--border-crt)",
+          background: "#050808",
           overflow: "hidden",
         }}
       />
 
       {/* Mode indicator */}
       {joined?.mode === "pipe" && (
-        <div style={{ fontSize: 11, color: "var(--text)", textAlign: "center" }}>
+        <div style={{ fontSize: 11, color: "var(--text-dim)", textAlign: "center" }}>
           view-only (pipe mode)
         </div>
       )}

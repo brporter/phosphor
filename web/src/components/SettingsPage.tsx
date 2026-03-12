@@ -31,10 +31,14 @@ export function SettingsPage() {
 
   return (
     <div style={{ maxWidth: 640 }}>
-      <h2 style={{ color: "var(--green)", marginBottom: 24 }}>Settings</h2>
+      <div className="section-heading" style={{ marginBottom: 24 }}>
+        // SETTINGS
+      </div>
 
       <section>
-        <h3 style={{ color: "var(--text)", marginBottom: 12 }}>API Keys</h3>
+        <div className="section-heading" style={{ marginBottom: 12 }}>
+          // API KEYS
+        </div>
         <p style={{ color: "var(--text)", fontSize: 13, marginBottom: 16 }}>
           Generate an API key to authenticate the phosphor daemon. The key is
           shown once — copy it and store it securely.
@@ -44,22 +48,23 @@ export function SettingsPage() {
           <div>
             <div
               style={{
-                background: "var(--bg-card)",
-                border: "1px solid var(--border)",
+                background: "var(--bg-card-crt)",
+                border: "1px solid var(--border-crt)",
                 padding: 12,
                 marginBottom: 8,
                 wordBreak: "break-all",
                 fontSize: 12,
                 color: "var(--green)",
+                textShadow: "0 0 4px rgba(0,255,65,0.3)",
               }}
             >
               {apiKey}
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <button className="btn-primary" onClick={handleCopy}>
-                copy to clipboard
+                [copy to clipboard]
               </button>
-              <span style={{ color: "var(--text)", fontSize: 12 }}>
+              <span style={{ color: "var(--text-dim)", fontSize: 12 }}>
                 Key ID: {keyId}
               </span>
             </div>
@@ -68,6 +73,7 @@ export function SettingsPage() {
                 color: "var(--amber)",
                 fontSize: 12,
                 marginTop: 12,
+                textShadow: "0 0 4px rgba(255,176,0,0.3)",
               }}
             >
               This key will not be shown again. Install it on your daemon with:
@@ -76,8 +82,8 @@ export function SettingsPage() {
               style={{
                 color: "var(--text)",
                 fontSize: 12,
-                background: "var(--bg-card)",
-                border: "1px solid var(--border)",
+                background: "var(--bg-card-crt)",
+                border: "1px solid var(--border-crt)",
                 padding: 8,
                 marginTop: 4,
               }}
@@ -92,7 +98,7 @@ export function SettingsPage() {
               onClick={() => void handleGenerate()}
               disabled={generating}
             >
-              {generating ? "generating..." : "generate API key"}
+              {generating ? "[generating...]" : "[generate API key]"}
             </button>
             {error && (
               <p style={{ color: "var(--red)", fontSize: 12, marginTop: 8 }}>

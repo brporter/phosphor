@@ -35,106 +35,57 @@ export function SessionCard({ session, token, onDestroyed }: SessionCardProps) {
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          border: "1px solid var(--border)",
-          background: "var(--bg-card)",
-          transition: "all 0.15s",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.borderColor = "var(--green-dim)";
-          e.currentTarget.style.boxShadow = "0 0 12px var(--green-glow)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.borderColor = "var(--border)";
-          e.currentTarget.style.boxShadow = "none";
-        }}
-      >
+      <div className="card-crt" style={{ display: "flex" }}>
         <Link
           to={`/session/${session.id}`}
-          style={{
-            display: "block",
-            flex: 1,
-            padding: 16,
-            textDecoration: "none",
-          }}
+          style={{ display: "block", flex: 1, textDecoration: "none" }}
         >
           <div
             style={{
               display: "flex",
-              justifyContent: "space-between",
-              alignItems: "baseline",
-              marginBottom: 8,
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 6,
             }}
           >
-            <span style={{ color: "var(--green)", fontWeight: 700 }}>
+            <span
+              style={{
+                color: "var(--green)",
+                fontWeight: 600,
+                fontSize: 13,
+                textShadow: "0 0 6px rgba(0,255,65,0.3)",
+              }}
+            >
               {session.hostname
                 ? `${session.hostname}: ${session.command || session.mode}`
                 : session.command || session.mode}
             </span>
-            <span
-              style={{
-                fontSize: 11,
-                color: "var(--amber)",
-                border: "1px solid var(--amber-dim)",
-                padding: "2px 6px",
-              }}
-            >
-              {session.mode}
-            </span>
+            <span className="badge badge-amber">[{session.mode}]</span>
             {session.lazy && !session.process_running && !session.process_exited && (
-              <span
-                style={{
-                  fontSize: 11,
-                  color: "var(--green)",
-                  border: "1px solid var(--green-dim)",
-                  padding: "2px 6px",
-                  marginLeft: 4,
-                }}
-              >
-                ready
-              </span>
+              <span className="badge badge-green">[ready]</span>
             )}
             {session.process_exited && (
-              <span
-                style={{
-                  fontSize: 11,
-                  color: "var(--red)",
-                  border: "1px solid var(--red)",
-                  padding: "2px 6px",
-                  marginLeft: 4,
-                }}
-              >
-                exited
-              </span>
+              <span className="badge badge-red">[exited]</span>
             )}
           </div>
           <div
             style={{
               display: "flex",
-              gap: 16,
-              fontSize: 12,
-              color: "var(--text)",
+              gap: 12,
+              fontSize: 11,
+              color: "var(--text-dim)",
             }}
           >
-            <span>
-              {session.viewers} viewer{session.viewers !== 1 ? "s" : ""}
-            </span>
-            <span style={{ color: "var(--border)" }}>{session.id}</span>
+            <span>viewers: {session.viewers}</span>
+            <span>id: {session.id}</span>
           </div>
         </Link>
         <button
+          className="btn-danger"
           onClick={() => setShowDestroyModal(true)}
-          style={{
-            color: "var(--red)",
-            cursor: "pointer",
-            padding: "0 16px",
-            fontSize: 12,
-            alignSelf: "center",
-          }}
+          style={{ alignSelf: "center" }}
         >
-          destroy
+          [destroy]
         </button>
       </div>
 
@@ -144,7 +95,7 @@ export function SessionCard({ session, token, onDestroyed }: SessionCardProps) {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0, 0, 0, 0.8)",
+            background: "rgba(0, 0, 0, 0.85)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -154,8 +105,9 @@ export function SessionCard({ session, token, onDestroyed }: SessionCardProps) {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
+              background: "var(--bg-card-crt)",
+              border: "1px solid var(--border-crt)",
+              boxShadow: "inset 0 0 20px rgba(0, 255, 65, 0.02)",
               padding: 24,
               maxWidth: 420,
               display: "flex",
@@ -163,25 +115,30 @@ export function SessionCard({ session, token, onDestroyed }: SessionCardProps) {
               gap: 16,
             }}
           >
-            <div style={{ color: "var(--red)", fontWeight: "bold", fontSize: 14 }}>
-              Destroy Session
+            <div
+              style={{
+                color: "var(--red)",
+                fontWeight: "bold",
+                fontSize: 14,
+                textShadow: "0 0 6px rgba(255,51,51,0.4)",
+              }}
+            >
+              // DESTROY SESSION
             </div>
             <div style={{ color: "var(--text)", fontSize: 13, lineHeight: 1.5 }}>
               This will permanently terminate the session and kill the remote process.
               It cannot be resumed or restarted. You will need to re-run{" "}
-              <code style={{ color: "var(--green)" }}>phosphor</code> on the remote
-              machine to start a new session.
+              <code style={{ color: "var(--green)", textShadow: "0 0 4px rgba(0,255,65,0.3)" }}>
+                phosphor
+              </code>{" "}
+              on the remote machine to start a new session.
             </div>
             <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
-              <button onClick={() => setShowDestroyModal(false)}>cancel</button>
-              <button
-                onClick={handleDestroy}
-                style={{
-                  color: "var(--red)",
-                  borderColor: "var(--red)",
-                }}
-              >
-                destroy session
+              <button className="btn-action" onClick={() => setShowDestroyModal(false)}>
+                [cancel]
+              </button>
+              <button className="btn-danger" onClick={handleDestroy}>
+                [destroy session]
               </button>
             </div>
           </div>

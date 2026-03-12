@@ -14,6 +14,7 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
           alignItems: "center",
           height: "100%",
           color: "var(--green)",
+          textShadow: "0 0 6px rgba(0, 255, 65, 0.4)",
         }}
       >
         <span className="blink">Initializing...</span>
@@ -36,7 +37,7 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
         <pre
           style={{
             color: "var(--green)",
-            textShadow: "0 0 10px var(--green-glow)",
+            textShadow: "0 0 12px rgba(0, 255, 65, 0.5)",
             fontSize: 16,
             textAlign: "center",
             lineHeight: 1.6,
@@ -50,9 +51,7 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
  ██║     ██║  ██║╚██████╔╝███████║██║     ██║  ██║╚██████╔╝██║  ██║
  ╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝`}
         </pre>
-        <p style={{ color: "var(--text)" }}>
-          Sign in to view your terminal sessions
-        </p>
+        <div className="section-heading">// AUTHENTICATION REQUIRED</div>
         <ProviderButtons providers={providers} login={login} />
       </div>
     );
