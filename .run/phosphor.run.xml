@@ -3,6 +3,9 @@
     <module name="phosphor" />
     <working_directory value="$PROJECT_DIR$" />
     <parameters value="--relay ws://localhost:8080 -- bash" />
+    <envs>
+      <env name="DEV_MODE" value="1" />
+    </envs>
     <kind value="DIRECTORY" />
     <package value="github.com/brporter/phosphor" />
     <directory value="$PROJECT_DIR$/cmd/phosphor" />
