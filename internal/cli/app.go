@@ -40,6 +40,11 @@ var backoffSchedule = []time.Duration{
 	30 * time.Second,
 }
 
+const (
+	cliPingInterval = 30 * time.Second
+	cliPingTimeout  = 15 * time.Second
+)
+
 // connectionResult is the structured result from a single connection attempt.
 type connectionResult struct {
 	err           error
@@ -289,6 +294,25 @@ func (a *App) runConnection(
 	closeProcDead := func() { procDeadOnce.Do(func() { close(procDead) }) }
 	closeConnLost := func() { connLostOnce.Do(func() { close(connLost) }) }
 	closeDestroyed := func() { destroyedOnce.Do(func() { close(sessionDestroyed) }) }
+
+	// Keepalive: send periodic pings to detect dead connections
+	// and keep WebSocket alive through NAT/firewalls.
+	go func() {
+		ticker := time.NewTicker(cliPingInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-connCtx.Done():
+				return
+			case <-ticker.C:
+				if err := ws.Send(connCtx, protocol.TypePing, nil); err != nil {
+					a.Logger.Debug("keepalive ping failed", "err", err)
+					closeConnLost()
+					return
+				}
+			}
+		}
+	}()
 
 	// Bridge: process stdout → local terminal + relay
 	go func() {
