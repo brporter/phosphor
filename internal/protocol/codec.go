@@ -9,7 +9,7 @@ import (
 var ErrEmptyMessage = errors.New("empty message")
 
 // Encode creates a binary message: [type_byte][payload].
-// For data types (Stdout/Stdin) payload is raw bytes.
+// For data types (Stdout/Stdin/FileChunk) payload is raw bytes.
 // For control types payload is JSON-encoded.
 func Encode(msgType byte, payload any) ([]byte, error) {
 	switch msgType {

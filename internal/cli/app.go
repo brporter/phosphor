@@ -437,6 +437,16 @@ func (a *App) runConnection(
 				}
 			case protocol.TypeFileStart:
 				if fileRecv == nil {
+					// Uploads disabled — send error ack so the viewer fails fast
+					var fs protocol.FileStart
+					if err := protocol.DecodeJSON(pl, &fs); err == nil {
+						ack := protocol.FileAck{
+							ID:     fs.ID,
+							Status: "error",
+							Error:  "uploads disabled on this session",
+						}
+						ws.Send(connCtx, protocol.TypeFileAck, ack)
+					}
 					continue
 				}
 				ack, err := fileRecv.HandleFileStart(pl)

@@ -286,18 +286,30 @@ describe("useWebSocket", () => {
     const fileStartJson = JSON.parse(new TextDecoder().decode(fileStartMsg.slice(1)));
     const transferId = fileStartJson.id;
 
-    // Simulate FileAck "accepted" — this unblocks sendFile to continue
+    // Simulate FileAck "accepted" — this unblocks sendFile to send chunks
     const ackAccepted = encode(MsgType.FileAck, {
       id: transferId,
       status: "accepted",
     });
     await act(async () => {
       ws.simulateMessage(ackAccepted);
+      // Let sendFile process chunks and send FileEnd
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    // Simulate FileAck "complete" — this unblocks sendFile's completion wait
+    const ackComplete = encode(MsgType.FileAck, {
+      id: transferId,
+      status: "complete",
+      bytes_written: 5,
+    });
+    await act(async () => {
+      ws.simulateMessage(ackComplete);
       await uploadPromise!;
     });
 
     const transfer = result.current.fileTransfers.get(transferId);
-    expect(transfer?.status).toBe("uploading");
+    expect(transfer?.status).toBe("complete");
   });
 
   it("stops upload on FileAck error", async () => {
@@ -424,7 +436,8 @@ describe("useWebSocket", () => {
     });
     await act(async () => {
       ws.simulateMessage(ackAccepted);
-      await uploadPromise!;
+      // Let sendFile process chunks and send FileEnd
+      await new Promise((r) => setTimeout(r, 0));
     });
 
     // Should have sent: FileStart, FileChunk(s), FileEnd
@@ -444,5 +457,16 @@ describe("useWebSocket", () => {
       const msg = new Uint8Array(calls[i][0] as ArrayBuffer);
       expect(msg[0]).toBe(MsgType.FileChunk);
     }
+
+    // Simulate FileAck "complete" — unblocks sendFile's completion wait
+    const ackComplete = encode(MsgType.FileAck, {
+      id: transferId,
+      status: "complete",
+      bytes_written: content.length,
+    });
+    await act(async () => {
+      ws.simulateMessage(ackComplete);
+      await uploadPromise!;
+    });
   });
 });

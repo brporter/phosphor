@@ -292,7 +292,6 @@ export function useWebSocket({
       // Stream file in chunks using file.slice() to avoid loading entire file into memory
       const textEncoder = new TextEncoder();
       const idBytes = textEncoder.encode(id); // 8 ASCII bytes
-      const hashParts: Uint8Array[] = [];
 
       let offset = 0;
       while (offset < file.size) {
@@ -304,7 +303,6 @@ export function useWebSocket({
         const blob = file.slice(offset, end);
         const chunkBuffer = await blob.arrayBuffer();
         const chunk = new Uint8Array(chunkBuffer);
-        hashParts.push(chunk);
 
         // Build FileChunk payload: [8-byte ID][raw data]
         const chunkPayload = new Uint8Array(TRANSFER_ID_LEN + chunk.length);
@@ -315,15 +313,11 @@ export function useWebSocket({
         offset = end;
       }
 
-      // Compute SHA256 incrementally from collected chunks
-      const totalLen = hashParts.reduce((sum, p) => sum + p.length, 0);
-      const fullData = new Uint8Array(totalLen);
-      let pos = 0;
-      for (const part of hashParts) {
-        fullData.set(part, pos);
-        pos += part.length;
-      }
-      const hashBuffer = await crypto.subtle.digest("SHA-256", fullData);
+      // Compute SHA256 by re-reading the file from disk.
+      // Web Crypto's digest() has no incremental API, so we read the file
+      // a second time rather than accumulating all chunks in memory.
+      const fileBuffer = await file.arrayBuffer();
+      const hashBuffer = await crypto.subtle.digest("SHA-256", fileBuffer);
       const hashArray = new Uint8Array(hashBuffer);
       const sha256 = Array.from(hashArray)
         .map((b) => b.toString(16).padStart(2, "0"))
@@ -332,7 +326,23 @@ export function useWebSocket({
       // Send FileEnd
       ws.send(encode(MsgType.FileEnd, { id, sha256 }));
 
-      // Schedule cleanup after completion ack arrives
+      // Wait for completion ack with timeout
+      const completeAck = await new Promise<FileAckPayload>((resolve) => {
+        pendingAcksRef.current.set(id, resolve);
+        setTimeout(() => {
+          if (pendingAcksRef.current.has(id)) {
+            pendingAcksRef.current.delete(id);
+            resolve({ id, status: "error", error: "completion ack timeout" });
+          }
+        }, ACK_TIMEOUT_MS);
+      });
+
+      if (completeAck.status === "error") {
+        markError(completeAck.error ?? "upload failed");
+        return;
+      }
+
+      // Schedule cleanup after successful completion
       scheduleTransferCleanup(id);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "upload failed";

@@ -88,7 +88,7 @@ func (fr *FileReceiver) HandleFileStart(payload []byte) (protocol.FileAck, error
 	// Clean up stale transfers
 	fr.cleanStaleLocked()
 
-	// Reject duplicate transfer IDs
+	// Replace duplicate transfer IDs (clean up old transfer first)
 	if existing, ok := fr.transfers[fs.ID]; ok {
 		existing.file.Close()
 		os.Remove(existing.tmpPath)
@@ -108,7 +108,7 @@ func (fr *FileReceiver) HandleFileStart(payload []byte) (protocol.FileAck, error
 	}
 
 	tmpPath := filepath.Join(fr.destDir, "."+fs.Name+".phosphor-tmp")
-	f, err := os.Create(tmpPath)
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return protocol.FileAck{
 			ID:     fs.ID,
@@ -182,7 +182,7 @@ func (fr *FileReceiver) HandleFileChunk(payload []byte) (protocol.FileAck, error
 		}, nil
 	}
 
-	t.hash.Write(data)
+	t.hash.Write(data[:n])
 	t.written += int64(n)
 	t.lastAct = time.Now()
 	written := t.written

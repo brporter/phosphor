@@ -45,9 +45,9 @@ describe("ProtectedRoute", () => {
       { user: null }
     );
 
-    expect(screen.getByText("sign in with Microsoft")).toBeInTheDocument();
-    expect(screen.getByText("sign in with Google")).toBeInTheDocument();
-    expect(screen.getByText("sign in with Apple")).toBeInTheDocument();
+    expect(screen.getByText("[sign in with Microsoft]")).toBeInTheDocument();
+    expect(screen.getByText("[sign in with Google]")).toBeInTheDocument();
+    expect(screen.getByText("[sign in with Apple]")).toBeInTheDocument();
     expect(screen.queryByText("Protected content")).not.toBeInTheDocument();
   });
 
@@ -59,8 +59,8 @@ describe("ProtectedRoute", () => {
       { user: null, providers: ["dev"] }
     );
 
-    expect(screen.getByText("dev mode")).toBeInTheDocument();
-    expect(screen.queryByText("sign in with Microsoft")).not.toBeInTheDocument();
+    expect(screen.getByText("[dev mode]")).toBeInTheDocument();
+    expect(screen.queryByText("[sign in with Microsoft]")).not.toBeInTheDocument();
   });
 
   it("renders children when authenticated", () => {
@@ -72,6 +72,6 @@ describe("ProtectedRoute", () => {
     );
 
     expect(screen.getByText("Protected content")).toBeInTheDocument();
-    expect(screen.queryByText("sign in with Microsoft")).not.toBeInTheDocument();
+    expect(screen.queryByText("[sign in with Microsoft]")).not.toBeInTheDocument();
   });
 });

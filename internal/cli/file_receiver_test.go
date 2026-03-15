@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -416,6 +417,41 @@ func TestStaleTransferCleanup(t *testing.T) {
 	staleTmp := filepath.Join(dir, ".stale.txt.phosphor-tmp")
 	if _, err := os.Stat(staleTmp); !os.IsNotExist(err) {
 		t.Error("stale temp file should be removed")
+	}
+}
+
+func TestFileReceiverRejectsSymlinkTmpPath(t *testing.T) {
+	dir := t.TempDir()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	fr := NewFileReceiver(logger, dir)
+	defer fr.Close()
+
+	// Create a symlink at the temp path location
+	targetFile := filepath.Join(dir, "evil-target")
+	os.WriteFile(targetFile, []byte("original"), 0o644)
+	symlinkPath := filepath.Join(dir, ".testfile.txt.phosphor-tmp")
+	if err := os.Symlink(targetFile, symlinkPath); err != nil {
+		t.Skip("symlinks not supported:", err)
+	}
+
+	// FileStart should fail because the tmp path already exists (as a symlink)
+	payload, _ := json.Marshal(protocol.FileStart{
+		ID:   "abcd1234",
+		Name: "testfile.txt",
+		Size: 5,
+	})
+	ack, err := fr.HandleFileStart(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ack.Status != "error" {
+		t.Errorf("expected error status, got %s", ack.Status)
+	}
+
+	// Verify the original file was not modified
+	content, _ := os.ReadFile(targetFile)
+	if string(content) != "original" {
+		t.Error("symlink target was modified")
 	}
 }
 

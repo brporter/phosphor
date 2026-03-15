@@ -76,7 +76,7 @@ const decoder = new TextDecoder();
 
 /**
  * Encode a protocol message.
- * For Stdin: payload is Uint8Array (raw key bytes).
+ * For Stdin/FileChunk: payload is Uint8Array (raw bytes).
  * For control messages: payload is JSON-serializable.
  */
 export function encode(type: number, payload?: unknown): ArrayBuffer {

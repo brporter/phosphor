@@ -90,6 +90,7 @@ func (s *Server) HandleViewerWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() {
+		ls.CleanupViewerTransfers(viewerID)
 		ls.RemoveViewer(viewerID)
 		prevSource := ls.GetLastInputSource()
 		ls.ResetInputSourceIfNoViewers()
@@ -202,6 +203,7 @@ func (s *Server) HandleViewerWebSocket(w http.ResponseWriter, r *http.Request) {
 			if err := protocol.DecodeJSON(payload, &fs); err == nil {
 				ls.RegisterFileTransfer(fs.ID, viewerID)
 			}
+			// Re-frame: prepend type byte to forward raw JSON payload to CLI
 			msg := make([]byte, 1+len(payload))
 			msg[0] = msgType
 			copy(msg[1:], payload)

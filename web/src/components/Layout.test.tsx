@@ -30,23 +30,23 @@ describe("Layout", () => {
   it("shows sign-in buttons when logged out", () => {
     renderLayout({ user: null });
 
-    expect(screen.getByText("sign in with Microsoft")).toBeInTheDocument();
-    expect(screen.queryByText("logout")).not.toBeInTheDocument();
+    expect(screen.getByText("[sign in with Microsoft]")).toBeInTheDocument();
+    expect(screen.queryByText("[logout]")).not.toBeInTheDocument();
   });
 
   it("shows dev mode button when dev provider is available", () => {
     renderLayout({ user: null, providers: ["dev"] });
 
-    expect(screen.getByText("dev mode")).toBeInTheDocument();
-    expect(screen.queryByText("sign in with Microsoft")).not.toBeInTheDocument();
+    expect(screen.getByText("[dev mode]")).toBeInTheDocument();
+    expect(screen.queryByText("[sign in with Microsoft]")).not.toBeInTheDocument();
   });
 
   it("shows user email and logout when logged in", () => {
     renderLayout({ user: testUser });
 
     expect(screen.getByText("test@test.com")).toBeInTheDocument();
-    expect(screen.getByText("logout")).toBeInTheDocument();
-    expect(screen.queryByText("sign in with Microsoft")).not.toBeInTheDocument();
+    expect(screen.getByText("[logout]")).toBeInTheDocument();
+    expect(screen.queryByText("[sign in with Microsoft]")).not.toBeInTheDocument();
   });
 
   it("renders footer", () => {

@@ -258,23 +258,24 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 				s.logger.Info("spawn complete", "session", sessionID, "cols", sc.Cols, "rows", sc.Rows)
 			}
 		case protocol.TypeFileAck:
+			// Route FileAck to the viewer that owns the transfer
+			var ack protocol.FileAck
+			if err := protocol.DecodeJSON(payload, &ack); err != nil {
+				s.logger.Warn("failed to decode FileAck", "session", sessionID, "err", err)
+				break
+			}
 			msg := make([]byte, 1+len(payload))
 			msg[0] = protocol.TypeFileAck
 			copy(msg[1:], payload)
-			// Route FileAck to the viewer that owns the transfer
-			var ack protocol.FileAck
-			if err := protocol.DecodeJSON(payload, &ack); err == nil {
-				if ls, ok := s.hub.GetLocal(sessionID); ok {
-					ls.SendFileAck(ctx, ack.ID, msg)
-					// Clean up mapping on terminal states
-					if ack.Status == "complete" || ack.Status == "error" {
-						ls.CleanupFileTransfer(ack.ID)
-					}
-					break
-				}
+			ls, ok := s.hub.GetLocal(sessionID)
+			if !ok {
+				s.logger.Warn("no local session for FileAck", "session", sessionID)
+				break
 			}
-			// Fallback: broadcast if we can't parse or find local session
-			s.hub.BroadcastOutput(ctx, sessionID, msg)
+			ls.SendFileAck(ctx, ack.ID, msg)
+			if ack.Status == "complete" || ack.Status == "error" {
+				ls.CleanupFileTransfer(ack.ID)
+			}
 		case protocol.TypePong:
 			// heartbeat response, ignore
 		}

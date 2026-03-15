@@ -147,6 +147,17 @@ func (ls *LocalSession) CleanupFileTransfer(transferID string) {
 	delete(ls.fileTransferOwners, transferID)
 }
 
+// CleanupViewerTransfers removes all file transfer mappings for a given viewer.
+func (ls *LocalSession) CleanupViewerTransfers(viewerID string) {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	for transferID, ownerID := range ls.fileTransferOwners {
+		if ownerID == viewerID {
+			delete(ls.fileTransferOwners, transferID)
+		}
+	}
+}
+
 // SendToCLI writes pre-encoded bytes to the local CLI connection.
 func (ls *LocalSession) SendToCLI(ctx context.Context, data []byte) error {
 	ls.mu.RLock()
