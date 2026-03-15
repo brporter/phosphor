@@ -29,6 +29,9 @@ type LocalSession struct {
 	cancelOutput func() // unsubscribe from output channel
 	cancelInput  func() // unsubscribe from input channel
 
+	// File transfer routing: transfer ID → viewer ID for targeted FileAck delivery.
+	fileTransferOwners map[string]string
+
 	// Resize priority tracking: the terminal that last received input
 	// dictates the PTY dimensions.
 	lastInputSource string // "cli" (default) or "viewer"
@@ -41,21 +44,23 @@ type LocalSession struct {
 // NewLocalSession creates a local session that hosts the CLI connection.
 func NewLocalSession(sessionID string, cliConn *websocket.Conn, bus MessageBus, logger *slog.Logger) *LocalSession {
 	return &LocalSession{
-		sessionID: sessionID,
-		cliConn:   cliConn,
-		bus:       bus,
-		logger:    logger,
-		viewers:   make(map[string]*websocket.Conn),
+		sessionID:          sessionID,
+		cliConn:            cliConn,
+		bus:                bus,
+		logger:             logger,
+		viewers:            make(map[string]*websocket.Conn),
+		fileTransferOwners: make(map[string]string),
 	}
 }
 
 // NewViewerOnlyLocalSession creates a local session for a relay that only hosts viewers.
 func NewViewerOnlyLocalSession(sessionID string, bus MessageBus, logger *slog.Logger) *LocalSession {
 	return &LocalSession{
-		sessionID: sessionID,
-		bus:       bus,
-		logger:    logger,
-		viewers:   make(map[string]*websocket.Conn),
+		sessionID:          sessionID,
+		bus:                bus,
+		logger:             logger,
+		viewers:            make(map[string]*websocket.Conn),
+		fileTransferOwners: make(map[string]string),
 	}
 }
 
@@ -103,6 +108,52 @@ func (ls *LocalSession) BroadcastToLocalViewers(ctx context.Context, data []byte
 	for id, conn := range viewers {
 		if err := conn.Write(ctx, websocket.MessageBinary, data); err != nil {
 			ls.logger.Debug("viewer write failed", "viewer", id, "err", err)
+		}
+	}
+}
+
+// RegisterFileTransfer records which viewer initiated a file transfer.
+func (ls *LocalSession) RegisterFileTransfer(transferID, viewerID string) {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	ls.fileTransferOwners[transferID] = viewerID
+}
+
+// SendFileAck sends a FileAck message to the viewer that owns the transfer.
+// Falls back to broadcast if the owner is not found.
+func (ls *LocalSession) SendFileAck(ctx context.Context, transferID string, data []byte) {
+	ls.mu.RLock()
+	viewerID, ok := ls.fileTransferOwners[transferID]
+	var conn *websocket.Conn
+	if ok {
+		conn = ls.viewers[viewerID]
+	}
+	ls.mu.RUnlock()
+
+	if conn != nil {
+		if err := conn.Write(ctx, websocket.MessageBinary, data); err != nil {
+			ls.logger.Debug("viewer write failed", "viewer", viewerID, "err", err)
+		}
+		return
+	}
+	// Fallback: broadcast to all viewers
+	ls.BroadcastToLocalViewers(ctx, data)
+}
+
+// CleanupFileTransfer removes the transfer-to-viewer mapping.
+func (ls *LocalSession) CleanupFileTransfer(transferID string) {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	delete(ls.fileTransferOwners, transferID)
+}
+
+// CleanupViewerTransfers removes all file transfer mappings for a given viewer.
+func (ls *LocalSession) CleanupViewerTransfers(viewerID string) {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	for transferID, ownerID := range ls.fileTransferOwners {
+		if ownerID == viewerID {
+			delete(ls.fileTransferOwners, transferID)
 		}
 	}
 }

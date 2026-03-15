@@ -1,4 +1,4 @@
-import { encode, decode, decodeJSON, MsgType, JoinedPayload } from './protocol';
+import { encode, decode, decodeJSON, MsgType, JoinedPayload, FileAckPayload } from './protocol';
 
 describe('encode', () => {
   it('encodes Stdin with raw Uint8Array payload', () => {
@@ -78,6 +78,67 @@ describe('decodeJSON', () => {
     expect(result.cols).toBe(120);
     expect(result.rows).toBe(40);
     expect(result.command).toBe('bash');
+  });
+});
+
+describe('file transfer messages', () => {
+  it('encodes FileStart as JSON', () => {
+    const payload = { id: 'abcd1234', name: 'test.txt', size: 1024 };
+    const buf = encode(MsgType.FileStart, payload);
+    const bytes = new Uint8Array(buf);
+    expect(bytes[0]).toBe(MsgType.FileStart);
+    const jsonStr = new TextDecoder().decode(bytes.slice(1));
+    expect(JSON.parse(jsonStr)).toEqual(payload);
+  });
+
+  it('encodes FileChunk as raw binary with type + payload', () => {
+    const idBytes = new TextEncoder().encode('abcd1234');
+    const data = new Uint8Array([0x01, 0x02, 0x03]);
+    const chunkPayload = new Uint8Array(idBytes.length + data.length);
+    chunkPayload.set(idBytes, 0);
+    chunkPayload.set(data, idBytes.length);
+
+    const buf = encode(MsgType.FileChunk, chunkPayload);
+    const bytes = new Uint8Array(buf);
+    expect(bytes[0]).toBe(MsgType.FileChunk);
+    // ID bytes
+    expect(Array.from(bytes.slice(1, 9))).toEqual(Array.from(idBytes));
+    // Data bytes
+    expect(Array.from(bytes.slice(9))).toEqual([0x01, 0x02, 0x03]);
+  });
+
+  it('encodes FileEnd as JSON', () => {
+    const payload = { id: 'abcd1234', sha256: 'deadbeef' };
+    const buf = encode(MsgType.FileEnd, payload);
+    const bytes = new Uint8Array(buf);
+    expect(bytes[0]).toBe(MsgType.FileEnd);
+    const jsonStr = new TextDecoder().decode(bytes.slice(1));
+    expect(JSON.parse(jsonStr)).toEqual(payload);
+  });
+
+  it('decodes FileAck JSON payload', () => {
+    const ack = { id: 'abcd1234', status: 'complete', bytes_written: 1024 };
+    const json = new TextEncoder().encode(JSON.stringify(ack));
+    const result = decodeJSON<FileAckPayload>(json);
+    expect(result.id).toBe('abcd1234');
+    expect(result.status).toBe('complete');
+    expect(result.bytes_written).toBe(1024);
+  });
+
+  it('round-trips FileChunk through encode/decode', () => {
+    const idBytes = new TextEncoder().encode('test1234');
+    const data = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+    const chunkPayload = new Uint8Array(8 + 4);
+    chunkPayload.set(idBytes, 0);
+    chunkPayload.set(data, 8);
+
+    const buf = encode(MsgType.FileChunk, chunkPayload);
+    const [type, payload] = decode(buf);
+    expect(type).toBe(MsgType.FileChunk);
+    // Extract ID and data from payload
+    const extractedId = new TextDecoder().decode(payload.slice(0, 8));
+    expect(extractedId).toBe('test1234');
+    expect(Array.from(payload.slice(8))).toEqual([0xde, 0xad, 0xbe, 0xef]);
   });
 });
 

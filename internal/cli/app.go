@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -312,6 +313,23 @@ func (a *App) runConnection(
 	}
 	a.Logger.Info("session active", "session_id", welcome.SessionID, "url", welcome.ViewURL)
 
+	// File receiver for handling uploads from viewers.
+	uploadDir := ""
+	if homeDir, err := os.UserHomeDir(); err == nil {
+		uploadDir = filepath.Join(homeDir, "phosphor-uploads")
+	} else {
+		uploadDir = filepath.Join(os.TempDir(), "phosphor-uploads")
+	}
+	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
+		a.Logger.Error("failed to create upload directory, file uploads disabled", "dir", uploadDir, "err", err)
+		uploadDir = "" // signal: uploads disabled
+	}
+	var fileRecv *FileReceiver
+	if uploadDir != "" {
+		fileRecv = NewFileReceiver(a.Logger, uploadDir)
+		defer fileRecv.Close()
+	}
+
 	// connCtx scoped to this single connection.
 	connCtx, connCancel := context.WithCancel(appCtx)
 	defer connCancel()
@@ -417,6 +435,46 @@ func (a *App) runConnection(
 				case restartCh <- struct{}{}:
 				default:
 				}
+			case protocol.TypeFileStart:
+				if fileRecv == nil {
+					// Uploads disabled — send error ack so the viewer fails fast
+					var fs protocol.FileStart
+					if err := protocol.DecodeJSON(pl, &fs); err == nil {
+						ack := protocol.FileAck{
+							ID:     fs.ID,
+							Status: "error",
+							Error:  "uploads disabled on this session",
+						}
+						ws.Send(connCtx, protocol.TypeFileAck, ack)
+					}
+					continue
+				}
+				ack, err := fileRecv.HandleFileStart(pl)
+				if err != nil {
+					a.Logger.Error("file start error", "err", err)
+					continue
+				}
+				ws.Send(connCtx, protocol.TypeFileAck, ack)
+			case protocol.TypeFileChunk:
+				if fileRecv == nil {
+					continue
+				}
+				ack, err := fileRecv.HandleFileChunk(pl)
+				if err != nil {
+					a.Logger.Error("file chunk error", "err", err)
+					continue
+				}
+				ws.Send(connCtx, protocol.TypeFileAck, ack)
+			case protocol.TypeFileEnd:
+				if fileRecv == nil {
+					continue
+				}
+				ack, err := fileRecv.HandleFileEnd(pl)
+				if err != nil {
+					a.Logger.Error("file end error", "err", err)
+					continue
+				}
+				ws.Send(connCtx, protocol.TypeFileAck, ack)
 			case protocol.TypeEnd:
 				a.Logger.Info("session destroyed by owner")
 				fmt.Fprintf(os.Stderr, "Session destroyed by owner. Shutting down.\r\n")

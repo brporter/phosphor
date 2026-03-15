@@ -257,6 +257,25 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 				s.hub.store.SetProcessExited(ctx, sessionID, false)
 				s.logger.Info("spawn complete", "session", sessionID, "cols", sc.Cols, "rows", sc.Rows)
 			}
+		case protocol.TypeFileAck:
+			// Route FileAck to the viewer that owns the transfer
+			var ack protocol.FileAck
+			if err := protocol.DecodeJSON(payload, &ack); err != nil {
+				s.logger.Warn("failed to decode FileAck", "session", sessionID, "err", err)
+				break
+			}
+			msg := make([]byte, 1+len(payload))
+			msg[0] = protocol.TypeFileAck
+			copy(msg[1:], payload)
+			ls, ok := s.hub.GetLocal(sessionID)
+			if !ok {
+				s.logger.Warn("no local session for FileAck", "session", sessionID)
+				break
+			}
+			ls.SendFileAck(ctx, ack.ID, msg)
+			if ack.Status == "complete" || ack.Status == "error" {
+				ls.CleanupFileTransfer(ack.ID)
+			}
 		case protocol.TypePong:
 			// heartbeat response, ignore
 		}

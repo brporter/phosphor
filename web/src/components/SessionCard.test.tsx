@@ -9,13 +9,17 @@ const baseSession: SessionData = {
   cols: 80,
   rows: 24,
   command: "bash",
+  hostname: "",
   viewers: 2,
+  process_exited: false,
+  lazy: false,
+  process_running: true,
 };
 
 function renderCard(session: SessionData) {
   return render(
     <MemoryRouter>
-      <SessionCard session={session} />
+      <SessionCard session={session} token={null} onDestroyed={vi.fn()} />
     </MemoryRouter>
   );
 }
@@ -25,16 +29,15 @@ describe("SessionCard", () => {
     renderCard(baseSession);
 
     expect(screen.getByText("bash")).toBeInTheDocument();
-    expect(screen.getByText("80x24")).toBeInTheDocument();
-    expect(screen.getByText("2 viewers")).toBeInTheDocument();
-    expect(screen.getByText("abc123")).toBeInTheDocument();
+    expect(screen.getByText(/viewers: 2/)).toBeInTheDocument();
+    expect(screen.getByText(/abc123/)).toBeInTheDocument();
   });
 
   it("shows mode when no command", () => {
     renderCard({ ...baseSession, command: "" });
 
-    // Both the command slot and mode badge show "pty" — verify there are 2 instances
-    expect(screen.getAllByText("pty")).toHaveLength(2);
+    // The mode appears as command text fallback and as badge [pty]
+    expect(screen.getByText("[pty]")).toBeInTheDocument();
   });
 
   it("links to session URL", () => {

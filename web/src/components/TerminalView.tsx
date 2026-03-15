@@ -5,7 +5,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { useAuth } from "../auth/useAuth";
-import { useWebSocket } from "../hooks/useWebSocket";
+import { useWebSocket, type FileTransfer } from "../hooks/useWebSocket";
 
 export function TerminalView() {
   const { id } = useParams<{ id: string }>();
@@ -13,7 +13,9 @@ export function TerminalView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [ended, setEnded] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
 
   const onData = useCallback((data: Uint8Array) => {
     termRef.current?.write(data);
@@ -28,7 +30,7 @@ export function TerminalView() {
     termRef.current?.write("\r\n\x1b[1;31m[Session ended]\x1b[0m\r\n");
   }, []);
 
-  const { connected, joined, error, processExited, sendStdin, sendResize, sendRestart } = useWebSocket({
+  const { connected, joined, error, processExited, fileTransfers, sendStdin, sendResize, sendRestart, sendFile } = useWebSocket({
     sessionId: id ?? "",
     token: getToken(),
     onData,
@@ -147,6 +149,58 @@ export function TerminalView() {
     }
   }, [processExited]);
 
+  // File upload handlers
+  const openFilePicker = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileSelected = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        sendFile(file);
+      }
+      // Reset so the same file can be re-selected
+      e.target.value = "";
+    },
+    [sendFile]
+  );
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragActive(false);
+      const file = e.dataTransfer.files[0];
+      if (file) {
+        sendFile(file);
+      }
+    },
+    [sendFile]
+  );
+
+  // Collect active uploads
+  const activeUploads: FileTransfer[] = [];
+  fileTransfers.forEach((t) => {
+    if (t.status === "uploading" || t.status === "error") {
+      activeUploads.push(t);
+    }
+  });
+
+  const showUploadButton = connected && joined?.mode === "pty";
+
   return (
     <div
       style={{
@@ -174,6 +228,17 @@ export function TerminalView() {
           )}
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {showUploadButton && (
+            <>
+              <button className="btn-action" onClick={openFilePicker}>[upload]</button>
+              <input
+                type="file"
+                ref={fileInputRef}
+                style={{ display: "none" }}
+                onChange={handleFileSelected}
+              />
+            </>
+          )}
           {processExited !== null ? (
             <>
               <span className="badge badge-amber">[exited ({processExited})]</span>
@@ -191,7 +256,31 @@ export function TerminalView() {
         </div>
       </div>
 
-      {/* Terminal container */}
+      {/* Upload progress bar */}
+      {activeUploads.length > 0 && (
+        <div className="upload-progress-bar">
+          {activeUploads.map((t) => {
+            const pct = t.size > 0 ? Math.round((t.bytesWritten / t.size) * 100) : 0;
+            return (
+              <div key={t.id} className="upload-progress-item">
+                <span className="upload-progress-name">{t.name}</span>
+                {t.status === "error" ? (
+                  <span className="upload-progress-error">{t.error}</span>
+                ) : (
+                  <>
+                    <div className="progress-track">
+                      <div className="progress-fill" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="upload-progress-pct">{pct}%</span>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Terminal container with drag-and-drop */}
       <div
         ref={containerRef}
         style={{
@@ -199,8 +288,19 @@ export function TerminalView() {
           border: "1px solid var(--border-crt)",
           background: "#050808",
           overflow: "hidden",
+          position: "relative",
         }}
-      />
+        onDragOver={showUploadButton ? handleDragOver : undefined}
+        onDragEnter={showUploadButton ? handleDragOver : undefined}
+        onDragLeave={showUploadButton ? handleDragLeave : undefined}
+        onDrop={showUploadButton ? handleDrop : undefined}
+      >
+        {dragActive && (
+          <div className="drop-overlay">
+            <span>Drop file to upload</span>
+          </div>
+        )}
+      </div>
 
       {/* Mode indicator */}
       {joined?.mode === "pipe" && (
