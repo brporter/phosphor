@@ -195,6 +195,72 @@ button:hover {
   outline-offset: 2px;
 }
 
+/* Upload progress bar */
+.upload-progress-bar {
+  background: var(--bg-panel-crt);
+  border: 1px solid var(--border-crt);
+  padding: 4px 10px;
+  font-size: 10px;
+}
+
+.upload-progress-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.upload-progress-name {
+  color: var(--text-bright);
+  min-width: 80px;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-progress-pct {
+  color: var(--green);
+  min-width: 32px;
+  text-align: right;
+}
+
+.upload-progress-error {
+  color: var(--red);
+  text-shadow: 0 0 4px rgba(255, 51, 51, 0.3);
+}
+
+.progress-track {
+  flex: 1;
+  height: 4px;
+  background: var(--bg-card-crt);
+  border: 1px solid var(--border-crt);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--green);
+  box-shadow: 0 0 6px rgba(0, 255, 65, 0.4);
+  transition: width 0.15s;
+}
+
+/* Drop overlay */
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 255, 65, 0.05);
+  border: 2px dashed var(--green-dim);
+  z-index: 10;
+  font-size: 14px;
+  color: var(--green);
+  text-shadow: 0 0 8px rgba(0, 255, 65, 0.5);
+  pointer-events: none;
+}
+
 /* Section heading */
 .section-heading {
   font-size: 11px;

@@ -257,6 +257,11 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 				s.hub.store.SetProcessExited(ctx, sessionID, false)
 				s.logger.Info("spawn complete", "session", sessionID, "cols", sc.Cols, "rows", sc.Rows)
 			}
+		case protocol.TypeFileAck:
+			msg := make([]byte, 1+len(payload))
+			msg[0] = protocol.TypeFileAck
+			copy(msg[1:], payload)
+			s.hub.BroadcastOutput(ctx, sessionID, msg)
 		case protocol.TypePong:
 			// heartbeat response, ignore
 		}

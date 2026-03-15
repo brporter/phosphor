@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -312,6 +313,15 @@ func (a *App) runConnection(
 	}
 	a.Logger.Info("session active", "session_id", welcome.SessionID, "url", welcome.ViewURL)
 
+	// File receiver for handling uploads from viewers.
+	homeDir, _ := os.UserHomeDir()
+	if homeDir == "" {
+		homeDir = filepath.Join(os.TempDir(), "phosphor-uploads")
+		os.MkdirAll(homeDir, 0o755)
+	}
+	fileRecv := NewFileReceiver(a.Logger, homeDir)
+	defer fileRecv.Close()
+
 	// connCtx scoped to this single connection.
 	connCtx, connCancel := context.WithCancel(appCtx)
 	defer connCancel()
@@ -417,6 +427,27 @@ func (a *App) runConnection(
 				case restartCh <- struct{}{}:
 				default:
 				}
+			case protocol.TypeFileStart:
+				ack, err := fileRecv.HandleFileStart(pl)
+				if err != nil {
+					a.Logger.Error("file start error", "err", err)
+					continue
+				}
+				ws.Send(connCtx, protocol.TypeFileAck, ack)
+			case protocol.TypeFileChunk:
+				ack, err := fileRecv.HandleFileChunk(pl)
+				if err != nil {
+					a.Logger.Error("file chunk error", "err", err)
+					continue
+				}
+				ws.Send(connCtx, protocol.TypeFileAck, ack)
+			case protocol.TypeFileEnd:
+				ack, err := fileRecv.HandleFileEnd(pl)
+				if err != nil {
+					a.Logger.Error("file end error", "err", err)
+					continue
+				}
+				ws.Send(connCtx, protocol.TypeFileAck, ack)
 			case protocol.TypeEnd:
 				a.Logger.Info("session destroyed by owner")
 				fmt.Fprintf(os.Stderr, "Session destroyed by owner. Shutting down.\r\n")

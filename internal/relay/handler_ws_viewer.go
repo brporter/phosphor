@@ -20,7 +20,7 @@ func (s *Server) HandleViewerWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.CloseNow()
-	conn.SetReadLimit(64 << 10) // 64KB for viewer messages
+	conn.SetReadLimit(128 << 10) // 128KB for viewer messages (file chunks up to 32KB)
 
 	ctx := r.Context()
 
@@ -195,6 +195,17 @@ func (s *Server) HandleViewerWebSocket(w http.ResponseWriter, r *http.Request) {
 					s.hub.store.UpdateDimensions(ctx, join.SessionID, sz.Cols, sz.Rows)
 				}
 				// If CLI has priority, viewer resize is stored but not forwarded.
+			}
+		case protocol.TypeFileStart, protocol.TypeFileEnd:
+			// Re-encode to copy data (matches existing forwarding pattern)
+			msg := make([]byte, 1+len(payload))
+			msg[0] = msgType
+			copy(msg[1:], payload)
+			s.hub.SendInput(ctx, join.SessionID, msg)
+		case protocol.TypeFileChunk:
+			encoded, err := protocol.Encode(protocol.TypeFileChunk, payload)
+			if err == nil {
+				s.hub.SendInput(ctx, join.SessionID, encoded)
 			}
 		case protocol.TypeRestart:
 			s.hub.RestartProcess(ctx, join.SessionID)

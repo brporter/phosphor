@@ -647,3 +647,185 @@ func TestHandleViewerWebSocket_LazySpawnRequest(t *testing.T) {
 		t.Error("CLI did not receive TypeSpawnRequest after viewer joined lazy session")
 	}
 }
+
+// --- TestFileUpload_ViewerToCLI ---
+
+// TestFileUpload_ViewerToCLI verifies that file transfer messages from a viewer
+// are forwarded to the CLI in order.
+func TestFileUpload_ViewerToCLI(t *testing.T) {
+	_, ts := newWSTestServer(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Step 1: create a CLI session.
+	cliConn := dialCLI(ctx, t, ts)
+
+	hello := protocol.Hello{Token: "", Mode: "pty", Cols: 80, Rows: 24, Command: "bash"}
+	if err := wsSend(ctx, cliConn, protocol.TypeHello, hello); err != nil {
+		t.Fatal("send Hello:", err)
+	}
+
+	mt, payload := wsRecv(ctx, t, cliConn)
+	if mt != protocol.TypeWelcome {
+		t.Fatalf("expected TypeWelcome, got 0x%02x", mt)
+	}
+	var welcome protocol.Welcome
+	if err := protocol.DecodeJSON(payload, &welcome); err != nil {
+		t.Fatal("decode Welcome:", err)
+	}
+	sessionID := welcome.SessionID
+
+	// Step 2: dial the viewer WebSocket.
+	viewerConn, _, err := websocket.Dial(ctx, wsURL(ts, "/ws/view/"+sessionID), &websocket.DialOptions{
+		Subprotocols: []string{"phosphor"},
+	})
+	if err != nil {
+		t.Fatal("dial /ws/view:", err)
+	}
+	defer viewerConn.CloseNow()
+
+	join := protocol.Join{Token: "", SessionID: sessionID}
+	if err := wsSend(ctx, viewerConn, protocol.TypeJoin, join); err != nil {
+		t.Fatal("send Join:", err)
+	}
+
+	// Expect Joined.
+	vmt, _ := wsRecv(ctx, t, viewerConn)
+	if vmt != protocol.TypeJoined {
+		t.Fatalf("expected TypeJoined, got 0x%02x", vmt)
+	}
+
+	// Drain ViewerCount from CLI
+	cliMT, _ := wsRecv(ctx, t, cliConn)
+	if cliMT != protocol.TypeViewerCount {
+		t.Errorf("CLI expected TypeViewerCount, got 0x%02x", cliMT)
+	}
+
+	// Step 3: Send FileStart from viewer
+	fileStart := protocol.FileStart{ID: "test1234", Name: "hello.txt", Size: 11}
+	if err := wsSend(ctx, viewerConn, protocol.TypeFileStart, fileStart); err != nil {
+		t.Fatal("send FileStart:", err)
+	}
+
+	// CLI should receive FileStart
+	cliMT, cliPayload := wsRecv(ctx, t, cliConn)
+	if cliMT != protocol.TypeFileStart {
+		t.Fatalf("CLI expected TypeFileStart (0x%02x), got 0x%02x", protocol.TypeFileStart, cliMT)
+	}
+	var receivedFS protocol.FileStart
+	if err := protocol.DecodeJSON(cliPayload, &receivedFS); err != nil {
+		t.Fatal("decode FileStart:", err)
+	}
+	if receivedFS.ID != "test1234" {
+		t.Errorf("FileStart.ID = %q, want test1234", receivedFS.ID)
+	}
+
+	// Step 4: Send FileChunk from viewer (raw binary)
+	chunkData := []byte("test1234hello world") // 8-byte ID + data
+	if err := wsSend(ctx, viewerConn, protocol.TypeFileChunk, chunkData); err != nil {
+		t.Fatal("send FileChunk:", err)
+	}
+
+	// CLI should receive FileChunk
+	cliMT, cliPayload = wsRecv(ctx, t, cliConn)
+	if cliMT != protocol.TypeFileChunk {
+		t.Fatalf("CLI expected TypeFileChunk (0x%02x), got 0x%02x", protocol.TypeFileChunk, cliMT)
+	}
+	if string(cliPayload) != string(chunkData) {
+		t.Errorf("FileChunk payload mismatch: got %q, want %q", string(cliPayload), string(chunkData))
+	}
+
+	// Step 5: Send FileEnd from viewer
+	fileEnd := protocol.FileEnd{ID: "test1234", SHA256: "abcdef"}
+	if err := wsSend(ctx, viewerConn, protocol.TypeFileEnd, fileEnd); err != nil {
+		t.Fatal("send FileEnd:", err)
+	}
+
+	// CLI should receive FileEnd
+	cliMT, cliPayload = wsRecv(ctx, t, cliConn)
+	if cliMT != protocol.TypeFileEnd {
+		t.Fatalf("CLI expected TypeFileEnd (0x%02x), got 0x%02x", protocol.TypeFileEnd, cliMT)
+	}
+	var receivedFE protocol.FileEnd
+	if err := protocol.DecodeJSON(cliPayload, &receivedFE); err != nil {
+		t.Fatal("decode FileEnd:", err)
+	}
+	if receivedFE.ID != "test1234" {
+		t.Errorf("FileEnd.ID = %q, want test1234", receivedFE.ID)
+	}
+}
+
+// --- TestFileUpload_AckBroadcast ---
+
+// TestFileUpload_AckBroadcast verifies that a FileAck sent by the CLI
+// is broadcast to the viewer.
+func TestFileUpload_AckBroadcast(t *testing.T) {
+	_, ts := newWSTestServer(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Step 1: create a CLI session.
+	cliConn := dialCLI(ctx, t, ts)
+
+	hello := protocol.Hello{Token: "", Mode: "pty", Cols: 80, Rows: 24, Command: "bash"}
+	if err := wsSend(ctx, cliConn, protocol.TypeHello, hello); err != nil {
+		t.Fatal("send Hello:", err)
+	}
+
+	mt, payload := wsRecv(ctx, t, cliConn)
+	if mt != protocol.TypeWelcome {
+		t.Fatalf("expected TypeWelcome, got 0x%02x", mt)
+	}
+	var welcome protocol.Welcome
+	if err := protocol.DecodeJSON(payload, &welcome); err != nil {
+		t.Fatal("decode Welcome:", err)
+	}
+	sessionID := welcome.SessionID
+
+	// Step 2: dial the viewer WebSocket.
+	viewerConn, _, err := websocket.Dial(ctx, wsURL(ts, "/ws/view/"+sessionID), &websocket.DialOptions{
+		Subprotocols: []string{"phosphor"},
+	})
+	if err != nil {
+		t.Fatal("dial /ws/view:", err)
+	}
+	defer viewerConn.CloseNow()
+
+	join := protocol.Join{Token: "", SessionID: sessionID}
+	if err := wsSend(ctx, viewerConn, protocol.TypeJoin, join); err != nil {
+		t.Fatal("send Join:", err)
+	}
+
+	// Expect Joined.
+	vmt, _ := wsRecv(ctx, t, viewerConn)
+	if vmt != protocol.TypeJoined {
+		t.Fatalf("expected TypeJoined, got 0x%02x", vmt)
+	}
+
+	// Drain ViewerCount from CLI
+	wsRecv(ctx, t, cliConn)
+
+	// Step 3: CLI sends FileAck
+	ack := protocol.FileAck{ID: "test1234", Status: "accepted"}
+	if err := wsSend(ctx, cliConn, protocol.TypeFileAck, ack); err != nil {
+		t.Fatal("send FileAck:", err)
+	}
+
+	// Viewer should receive FileAck
+	vmt2, vp2 := wsRecv(ctx, t, viewerConn)
+	if vmt2 != protocol.TypeFileAck {
+		t.Fatalf("viewer expected TypeFileAck (0x%02x), got 0x%02x", protocol.TypeFileAck, vmt2)
+	}
+	var receivedAck protocol.FileAck
+	if err := protocol.DecodeJSON(vp2, &receivedAck); err != nil {
+		t.Fatal("decode FileAck:", err)
+	}
+	if receivedAck.ID != "test1234" {
+		t.Errorf("FileAck.ID = %q, want test1234", receivedAck.ID)
+	}
+	if receivedAck.Status != "accepted" {
+		t.Errorf("FileAck.Status = %q, want accepted", receivedAck.Status)
+	}
+}

@@ -20,6 +20,11 @@ const (
 	TypeSpawnComplete byte = 0x23
 	TypePing          byte = 0x30
 	TypePong          byte = 0x31
+
+	TypeFileStart byte = 0x40
+	TypeFileChunk byte = 0x41
+	TypeFileEnd   byte = 0x42
+	TypeFileAck   byte = 0x43
 )
 
 // Hello is sent by the CLI when connecting.
@@ -96,4 +101,25 @@ type ProcessExited struct {
 type SpawnComplete struct {
 	Cols int `json:"cols"`
 	Rows int `json:"rows"`
+}
+
+// FileStart initiates a file upload from viewer to CLI.
+type FileStart struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+}
+
+// FileEnd signals the end of a file transfer with a hash for verification.
+type FileEnd struct {
+	ID     string `json:"id"`
+	SHA256 string `json:"sha256"`
+}
+
+// FileAck is sent by the CLI to report file transfer progress/completion/error.
+type FileAck struct {
+	ID           string `json:"id"`
+	Status       string `json:"status"` // accepted, progress, complete, error
+	Error        string `json:"error,omitempty"`
+	BytesWritten int64  `json:"bytes_written,omitempty"`
 }

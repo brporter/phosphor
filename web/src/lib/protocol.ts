@@ -20,6 +20,10 @@ export const MsgType = {
   Restart: 0x18,
   Ping: 0x30,
   Pong: 0x31,
+  FileStart: 0x40,
+  FileChunk: 0x41,
+  FileEnd: 0x42,
+  FileAck: 0x43,
 } as const;
 
 export type MsgTypeValue = (typeof MsgType)[keyof typeof MsgType];
@@ -49,6 +53,24 @@ export interface ProcessExitedPayload {
   exit_code: number;
 }
 
+export interface FileStartPayload {
+  id: string;
+  name: string;
+  size: number;
+}
+
+export interface FileEndPayload {
+  id: string;
+  sha256: string;
+}
+
+export interface FileAckPayload {
+  id: string;
+  status: "accepted" | "progress" | "complete" | "error";
+  error?: string;
+  bytes_written?: number;
+}
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -58,7 +80,7 @@ const decoder = new TextDecoder();
  * For control messages: payload is JSON-serializable.
  */
 export function encode(type: number, payload?: unknown): ArrayBuffer {
-  if (type === MsgType.Stdin) {
+  if (type === MsgType.Stdin || type === MsgType.FileChunk) {
     const data = payload as Uint8Array;
     const buf = new Uint8Array(1 + data.length);
     buf[0] = type;

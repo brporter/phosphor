@@ -312,6 +312,139 @@ func TestEncodeDecodeSpawnComplete(t *testing.T) {
 	}
 }
 
+// TestEncodeDecodeFileStart verifies that TypeFileStart encodes a FileStart
+// struct as JSON and round-trips correctly.
+func TestEncodeDecodeFileStart(t *testing.T) {
+	original := FileStart{ID: "abcd1234", Name: "test.txt", Size: 1024}
+	encoded, err := Encode(TypeFileStart, original)
+	if err != nil {
+		t.Fatalf("Encode error: %v", err)
+	}
+	if encoded[0] != TypeFileStart {
+		t.Errorf("type byte: got 0x%02x, want 0x%02x", encoded[0], TypeFileStart)
+	}
+	decodedType, payload, err := Decode(encoded)
+	if err != nil {
+		t.Fatalf("Decode error: %v", err)
+	}
+	if decodedType != TypeFileStart {
+		t.Errorf("decoded type: got 0x%02x, want 0x%02x", decodedType, TypeFileStart)
+	}
+	var decoded FileStart
+	if err := DecodeJSON(payload, &decoded); err != nil {
+		t.Fatalf("DecodeJSON error: %v", err)
+	}
+	if decoded.ID != original.ID || decoded.Name != original.Name || decoded.Size != original.Size {
+		t.Errorf("round-trip mismatch: got %+v, want %+v", decoded, original)
+	}
+}
+
+// TestEncodeDecodeFileChunk verifies that TypeFileChunk encodes as raw binary
+// (like TypeStdout/TypeStdin) and round-trips correctly.
+func TestEncodeDecodeFileChunk(t *testing.T) {
+	// FileChunk payload: [8-byte transfer ID][raw data]
+	chunkPayload := []byte("abcd1234some file data here")
+	encoded, err := Encode(TypeFileChunk, chunkPayload)
+	if err != nil {
+		t.Fatalf("Encode error: %v", err)
+	}
+	if encoded[0] != TypeFileChunk {
+		t.Errorf("type byte: got 0x%02x, want 0x%02x", encoded[0], TypeFileChunk)
+	}
+
+	decodedType, payload, err := Decode(encoded)
+	if err != nil {
+		t.Fatalf("Decode error: %v", err)
+	}
+	if decodedType != TypeFileChunk {
+		t.Errorf("decoded type: got 0x%02x, want 0x%02x", decodedType, TypeFileChunk)
+	}
+	if string(payload) != string(chunkPayload) {
+		t.Errorf("payload mismatch: got %q, want %q", string(payload), string(chunkPayload))
+	}
+}
+
+// TestEncodeDecodeFileChunk_RejectsNonBytes verifies that passing a non-[]byte
+// value for TypeFileChunk returns an error.
+func TestEncodeDecodeFileChunk_RejectsNonBytes(t *testing.T) {
+	_, err := Encode(TypeFileChunk, "not bytes")
+	if err == nil {
+		t.Fatal("expected error for non-[]byte FileChunk payload")
+	}
+}
+
+// TestEncodeDecodeFileEnd verifies that TypeFileEnd encodes a FileEnd struct
+// as JSON and round-trips correctly.
+func TestEncodeDecodeFileEnd(t *testing.T) {
+	original := FileEnd{ID: "abcd1234", SHA256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+	encoded, err := Encode(TypeFileEnd, original)
+	if err != nil {
+		t.Fatalf("Encode error: %v", err)
+	}
+	if encoded[0] != TypeFileEnd {
+		t.Errorf("type byte: got 0x%02x, want 0x%02x", encoded[0], TypeFileEnd)
+	}
+	decodedType, payload, err := Decode(encoded)
+	if err != nil {
+		t.Fatalf("Decode error: %v", err)
+	}
+	if decodedType != TypeFileEnd {
+		t.Errorf("decoded type: got 0x%02x, want 0x%02x", decodedType, TypeFileEnd)
+	}
+	var decoded FileEnd
+	if err := DecodeJSON(payload, &decoded); err != nil {
+		t.Fatalf("DecodeJSON error: %v", err)
+	}
+	if decoded.ID != original.ID || decoded.SHA256 != original.SHA256 {
+		t.Errorf("round-trip mismatch: got %+v, want %+v", decoded, original)
+	}
+}
+
+// TestEncodeDecodeFileAck verifies that TypeFileAck encodes a FileAck struct
+// as JSON and round-trips correctly.
+func TestEncodeDecodeFileAck(t *testing.T) {
+	original := FileAck{ID: "abcd1234", Status: "complete", BytesWritten: 1024}
+	encoded, err := Encode(TypeFileAck, original)
+	if err != nil {
+		t.Fatalf("Encode error: %v", err)
+	}
+	if encoded[0] != TypeFileAck {
+		t.Errorf("type byte: got 0x%02x, want 0x%02x", encoded[0], TypeFileAck)
+	}
+	decodedType, payload, err := Decode(encoded)
+	if err != nil {
+		t.Fatalf("Decode error: %v", err)
+	}
+	if decodedType != TypeFileAck {
+		t.Errorf("decoded type: got 0x%02x, want 0x%02x", decodedType, TypeFileAck)
+	}
+	var decoded FileAck
+	if err := DecodeJSON(payload, &decoded); err != nil {
+		t.Fatalf("DecodeJSON error: %v", err)
+	}
+	if decoded.ID != original.ID || decoded.Status != original.Status || decoded.BytesWritten != original.BytesWritten {
+		t.Errorf("round-trip mismatch: got %+v, want %+v", decoded, original)
+	}
+}
+
+// TestEncodeDecodeFileAck_WithError verifies that FileAck with error status
+// round-trips the error field correctly.
+func TestEncodeDecodeFileAck_WithError(t *testing.T) {
+	original := FileAck{ID: "abcd1234", Status: "error", Error: "hash mismatch"}
+	encoded, err := Encode(TypeFileAck, original)
+	if err != nil {
+		t.Fatalf("Encode error: %v", err)
+	}
+	_, payload, _ := Decode(encoded)
+	var decoded FileAck
+	if err := DecodeJSON(payload, &decoded); err != nil {
+		t.Fatalf("DecodeJSON error: %v", err)
+	}
+	if decoded.Error != original.Error {
+		t.Errorf("Error field: got %q, want %q", decoded.Error, original.Error)
+	}
+}
+
 // TestEncodeDecode_RoundTrip verifies that encoding a message and then
 // decoding it produces the original type byte and payload for all message types.
 func TestEncodeDecode_RoundTrip(t *testing.T) {
@@ -399,6 +532,30 @@ func TestEncodeDecode_RoundTrip(t *testing.T) {
 			name:    "TypeMode",
 			msgType: TypeMode,
 			payload: Mode{Mode: "pipe"},
+			isData:  false,
+		},
+		{
+			name:    "TypeFileStart",
+			msgType: TypeFileStart,
+			payload: FileStart{ID: "abcd1234", Name: "test.txt", Size: 1024},
+			isData:  false,
+		},
+		{
+			name:    "TypeFileChunk",
+			msgType: TypeFileChunk,
+			payload: []byte("abcd1234raw file chunk data"),
+			isData:  true,
+		},
+		{
+			name:    "TypeFileEnd",
+			msgType: TypeFileEnd,
+			payload: FileEnd{ID: "abcd1234", SHA256: "deadbeef"},
+			isData:  false,
+		},
+		{
+			name:    "TypeFileAck",
+			msgType: TypeFileAck,
+			payload: FileAck{ID: "abcd1234", Status: "complete", BytesWritten: 1024},
 			isData:  false,
 		},
 	}
