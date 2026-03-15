@@ -314,13 +314,21 @@ func (a *App) runConnection(
 	a.Logger.Info("session active", "session_id", welcome.SessionID, "url", welcome.ViewURL)
 
 	// File receiver for handling uploads from viewers.
-	homeDir, _ := os.UserHomeDir()
-	if homeDir == "" {
-		homeDir = filepath.Join(os.TempDir(), "phosphor-uploads")
-		os.MkdirAll(homeDir, 0o755)
+	uploadDir := ""
+	if homeDir, err := os.UserHomeDir(); err == nil {
+		uploadDir = filepath.Join(homeDir, "phosphor-uploads")
+	} else {
+		uploadDir = filepath.Join(os.TempDir(), "phosphor-uploads")
 	}
-	fileRecv := NewFileReceiver(a.Logger, homeDir)
-	defer fileRecv.Close()
+	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
+		a.Logger.Error("failed to create upload directory, file uploads disabled", "dir", uploadDir, "err", err)
+		uploadDir = "" // signal: uploads disabled
+	}
+	var fileRecv *FileReceiver
+	if uploadDir != "" {
+		fileRecv = NewFileReceiver(a.Logger, uploadDir)
+		defer fileRecv.Close()
+	}
 
 	// connCtx scoped to this single connection.
 	connCtx, connCancel := context.WithCancel(appCtx)
@@ -428,6 +436,9 @@ func (a *App) runConnection(
 				default:
 				}
 			case protocol.TypeFileStart:
+				if fileRecv == nil {
+					continue
+				}
 				ack, err := fileRecv.HandleFileStart(pl)
 				if err != nil {
 					a.Logger.Error("file start error", "err", err)
@@ -435,6 +446,9 @@ func (a *App) runConnection(
 				}
 				ws.Send(connCtx, protocol.TypeFileAck, ack)
 			case protocol.TypeFileChunk:
+				if fileRecv == nil {
+					continue
+				}
 				ack, err := fileRecv.HandleFileChunk(pl)
 				if err != nil {
 					a.Logger.Error("file chunk error", "err", err)
@@ -442,6 +456,9 @@ func (a *App) runConnection(
 				}
 				ws.Send(connCtx, protocol.TypeFileAck, ack)
 			case protocol.TypeFileEnd:
+				if fileRecv == nil {
+					continue
+				}
 				ack, err := fileRecv.HandleFileEnd(pl)
 				if err != nil {
 					a.Logger.Error("file end error", "err", err)

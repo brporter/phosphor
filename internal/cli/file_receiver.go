@@ -18,6 +18,7 @@ import (
 const (
 	fileChunkIDLen       = 8
 	staleTransferTimeout = 60 * time.Second
+	maxFileSize          = 100 << 20 // 100 MB
 )
 
 // FileReceiver handles incoming file transfers from viewers.
@@ -54,6 +55,15 @@ func (fr *FileReceiver) HandleFileStart(payload []byte) (protocol.FileAck, error
 		return protocol.FileAck{}, fmt.Errorf("decode FileStart: %w", err)
 	}
 
+	// Validate transfer ID: must be exactly 8 bytes, alphanumeric
+	if err := validateTransferID(fs.ID); err != nil {
+		return protocol.FileAck{
+			ID:     fs.ID,
+			Status: "error",
+			Error:  err.Error(),
+		}, nil
+	}
+
 	// Validate filename
 	if err := validateFilename(fs.Name); err != nil {
 		return protocol.FileAck{
@@ -63,11 +73,28 @@ func (fr *FileReceiver) HandleFileStart(payload []byte) (protocol.FileAck, error
 		}, nil
 	}
 
+	// Validate file size
+	if fs.Size <= 0 || fs.Size > maxFileSize {
+		return protocol.FileAck{
+			ID:     fs.ID,
+			Status: "error",
+			Error:  fmt.Sprintf("invalid file size: %d (max %d bytes)", fs.Size, maxFileSize),
+		}, nil
+	}
+
 	fr.mu.Lock()
 	defer fr.mu.Unlock()
 
 	// Clean up stale transfers
 	fr.cleanStaleLocked()
+
+	// Reject duplicate transfer IDs
+	if existing, ok := fr.transfers[fs.ID]; ok {
+		existing.file.Close()
+		os.Remove(existing.tmpPath)
+		delete(fr.transfers, fs.ID)
+		fr.logger.Warn("replaced duplicate transfer ID", "id", fs.ID)
+	}
 
 	finalPath := filepath.Join(fr.destDir, fs.Name)
 
@@ -119,9 +146,8 @@ func (fr *FileReceiver) HandleFileChunk(payload []byte) (protocol.FileAck, error
 
 	fr.mu.Lock()
 	t, ok := fr.transfers[id]
-	fr.mu.Unlock()
-
 	if !ok {
+		fr.mu.Unlock()
 		return protocol.FileAck{
 			ID:     id,
 			Status: "error",
@@ -129,9 +155,26 @@ func (fr *FileReceiver) HandleFileChunk(payload []byte) (protocol.FileAck, error
 		}, nil
 	}
 
+	// Check size limit before writing
+	if t.written+int64(len(data)) > t.size {
+		// Overflow — clean up under lock
+		t.file.Close()
+		os.Remove(t.tmpPath)
+		delete(fr.transfers, id)
+		fr.mu.Unlock()
+		return protocol.FileAck{
+			ID:     id,
+			Status: "error",
+			Error:  fmt.Sprintf("size exceeded: declared %d bytes, received %d", t.size, t.written+int64(len(data))),
+		}, nil
+	}
+
 	n, err := t.file.Write(data)
 	if err != nil {
-		fr.cleanupTransfer(id)
+		t.file.Close()
+		os.Remove(t.tmpPath)
+		delete(fr.transfers, id)
+		fr.mu.Unlock()
 		return protocol.FileAck{
 			ID:     id,
 			Status: "error",
@@ -142,11 +185,13 @@ func (fr *FileReceiver) HandleFileChunk(payload []byte) (protocol.FileAck, error
 	t.hash.Write(data)
 	t.written += int64(n)
 	t.lastAct = time.Now()
+	written := t.written
+	fr.mu.Unlock()
 
 	return protocol.FileAck{
 		ID:           id,
 		Status:       "progress",
-		BytesWritten: t.written,
+		BytesWritten: written,
 	}, nil
 }
 
@@ -159,9 +204,8 @@ func (fr *FileReceiver) HandleFileEnd(payload []byte) (protocol.FileAck, error) 
 
 	fr.mu.Lock()
 	t, ok := fr.transfers[fe.ID]
-	fr.mu.Unlock()
-
 	if !ok {
+		fr.mu.Unlock()
 		return protocol.FileAck{
 			ID:     fe.ID,
 			Status: "error",
@@ -169,16 +213,27 @@ func (fr *FileReceiver) HandleFileEnd(payload []byte) (protocol.FileAck, error) 
 		}, nil
 	}
 
+	// Remove from map immediately — no other handler should touch this transfer
+	delete(fr.transfers, fe.ID)
+	fr.mu.Unlock()
+
 	// Close the file before rename
 	t.file.Close()
+
+	// Verify written bytes match declared size
+	if t.written != t.size {
+		os.Remove(t.tmpPath)
+		return protocol.FileAck{
+			ID:     fe.ID,
+			Status: "error",
+			Error:  fmt.Sprintf("size mismatch: declared %d bytes, received %d", t.size, t.written),
+		}, nil
+	}
 
 	// Verify hash
 	got := hex.EncodeToString(t.hash.Sum(nil))
 	if got != fe.SHA256 {
 		os.Remove(t.tmpPath)
-		fr.mu.Lock()
-		delete(fr.transfers, fe.ID)
-		fr.mu.Unlock()
 		return protocol.FileAck{
 			ID:     fe.ID,
 			Status: "error",
@@ -189,9 +244,6 @@ func (fr *FileReceiver) HandleFileEnd(payload []byte) (protocol.FileAck, error) 
 	// Check again that target doesn't exist (race protection)
 	if _, err := os.Stat(t.finalPath); err == nil {
 		os.Remove(t.tmpPath)
-		fr.mu.Lock()
-		delete(fr.transfers, fe.ID)
-		fr.mu.Unlock()
 		return protocol.FileAck{
 			ID:     fe.ID,
 			Status: "error",
@@ -202,19 +254,12 @@ func (fr *FileReceiver) HandleFileEnd(payload []byte) (protocol.FileAck, error) 
 	// Rename temp to final
 	if err := os.Rename(t.tmpPath, t.finalPath); err != nil {
 		os.Remove(t.tmpPath)
-		fr.mu.Lock()
-		delete(fr.transfers, fe.ID)
-		fr.mu.Unlock()
 		return protocol.FileAck{
 			ID:     fe.ID,
 			Status: "error",
 			Error:  "rename failed: " + err.Error(),
 		}, nil
 	}
-
-	fr.mu.Lock()
-	delete(fr.transfers, fe.ID)
-	fr.mu.Unlock()
 
 	fr.logger.Info("file transfer complete", "id", fe.ID, "path", t.finalPath, "bytes", t.written)
 
@@ -236,16 +281,6 @@ func (fr *FileReceiver) Close() {
 	}
 }
 
-func (fr *FileReceiver) cleanupTransfer(id string) {
-	fr.mu.Lock()
-	defer fr.mu.Unlock()
-	if t, ok := fr.transfers[id]; ok {
-		t.file.Close()
-		os.Remove(t.tmpPath)
-		delete(fr.transfers, id)
-	}
-}
-
 func (fr *FileReceiver) cleanStaleLocked() {
 	now := time.Now()
 	for id, t := range fr.transfers {
@@ -256,6 +291,19 @@ func (fr *FileReceiver) cleanStaleLocked() {
 			fr.logger.Info("cleaned up stale transfer", "id", id)
 		}
 	}
+}
+
+// validateTransferID ensures the transfer ID is exactly 8 alphanumeric bytes.
+func validateTransferID(id string) error {
+	if len(id) != fileChunkIDLen {
+		return fmt.Errorf("transfer ID must be exactly %d characters", fileChunkIDLen)
+	}
+	for _, c := range id {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+			return fmt.Errorf("transfer ID contains invalid character: %c", c)
+		}
+	}
+	return nil
 }
 
 // validateFilename rejects unsafe filenames.

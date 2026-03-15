@@ -81,7 +81,10 @@ const decoder = new TextDecoder();
  */
 export function encode(type: number, payload?: unknown): ArrayBuffer {
   if (type === MsgType.Stdin || type === MsgType.FileChunk) {
-    const data = payload as Uint8Array;
+    if (!(payload instanceof Uint8Array)) {
+      throw new Error(`encode: expected Uint8Array for type 0x${type.toString(16)}, got ${typeof payload}`);
+    }
+    const data = payload;
     const buf = new Uint8Array(1 + data.length);
     buf[0] = type;
     buf.set(data, 1);

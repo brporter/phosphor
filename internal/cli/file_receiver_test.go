@@ -96,6 +96,88 @@ func TestHandleFileStart_DotFile(t *testing.T) {
 	}
 }
 
+func TestHandleFileStart_InvalidTransferID(t *testing.T) {
+	fr, _ := testReceiver(t)
+
+	cases := []struct {
+		name string
+		id   string
+	}{
+		{"too_short", "abc"},
+		{"too_long", "abcdefghij"},
+		{"special_chars", "abcd!@#$"},
+		{"empty", ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := makeFileStartPayload(tc.id, "test.txt", 100)
+			ack, err := fr.HandleFileStart(payload)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if ack.Status != "error" {
+				t.Errorf("expected error status for ID %q, got %q", tc.id, ack.Status)
+			}
+		})
+	}
+}
+
+func TestHandleFileStart_InvalidSize(t *testing.T) {
+	fr, _ := testReceiver(t)
+
+	cases := []struct {
+		name string
+		size int64
+	}{
+		{"zero", 0},
+		{"negative", -1},
+		{"too_large", maxFileSize + 1},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := makeFileStartPayload("abcd1234", "test.txt", tc.size)
+			ack, err := fr.HandleFileStart(payload)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if ack.Status != "error" {
+				t.Errorf("expected error status for size %d, got %q", tc.size, ack.Status)
+			}
+		})
+	}
+}
+
+func TestHandleFileStart_DuplicateID(t *testing.T) {
+	fr, _ := testReceiver(t)
+
+	// First transfer
+	payload1 := makeFileStartPayload("abcd1234", "file1.txt", 100)
+	ack1, err := fr.HandleFileStart(payload1)
+	if err != nil || ack1.Status != "accepted" {
+		t.Fatalf("first start failed: err=%v status=%s", err, ack1.Status)
+	}
+
+	// Second transfer with same ID replaces the first
+	payload2 := makeFileStartPayload("abcd1234", "file2.txt", 200)
+	ack2, err := fr.HandleFileStart(payload2)
+	if err != nil {
+		t.Fatalf("second start error: %v", err)
+	}
+	if ack2.Status != "accepted" {
+		t.Errorf("second start status: got %q, want accepted", ack2.Status)
+	}
+
+	// Only one transfer should exist
+	fr.mu.Lock()
+	count := len(fr.transfers)
+	fr.mu.Unlock()
+	if count != 1 {
+		t.Errorf("expected 1 transfer, got %d", count)
+	}
+}
+
 func TestHandleFileChunk_WritesData(t *testing.T) {
 	fr, dir := testReceiver(t)
 
@@ -139,10 +221,45 @@ func TestHandleFileChunk_WritesData(t *testing.T) {
 	}
 }
 
+func TestHandleFileChunk_SizeExceeded(t *testing.T) {
+	fr, dir := testReceiver(t)
+
+	// Start transfer with size=5
+	startPayload := makeFileStartPayload("abcd1234", "test.txt", 5)
+	ack, err := fr.HandleFileStart(startPayload)
+	if err != nil || ack.Status != "accepted" {
+		t.Fatalf("start failed: err=%v status=%s", err, ack.Status)
+	}
+
+	// Send a chunk that exceeds declared size
+	chunk := makeFileChunkPayload("abcd1234", []byte("this is way too long"))
+	ack2, err := fr.HandleFileChunk(chunk)
+	if err != nil {
+		t.Fatalf("chunk error: %v", err)
+	}
+	if ack2.Status != "error" {
+		t.Errorf("expected error status for oversized chunk, got %q", ack2.Status)
+	}
+
+	// Transfer should be cleaned up
+	fr.mu.Lock()
+	_, exists := fr.transfers["abcd1234"]
+	fr.mu.Unlock()
+	if exists {
+		t.Error("transfer should be cleaned up after size exceeded")
+	}
+
+	// Temp file should be removed
+	tmpPath := filepath.Join(dir, ".test.txt.phosphor-tmp")
+	if _, err := os.Stat(tmpPath); !os.IsNotExist(err) {
+		t.Error("temp file should be removed after size exceeded")
+	}
+}
+
 func TestHandleFileChunk_UnknownTransfer(t *testing.T) {
 	fr, _ := testReceiver(t)
 
-	chunk := makeFileChunkPayload("unknown!", []byte("data"))
+	chunk := makeFileChunkPayload("unknown1", []byte("data"))
 	ack, err := fr.HandleFileChunk(chunk)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -222,6 +339,30 @@ func TestHandleFileEnd_HashMismatch(t *testing.T) {
 	}
 }
 
+func TestHandleFileEnd_SizeMismatch(t *testing.T) {
+	fr, _ := testReceiver(t)
+
+	data := []byte("hi")
+	h := sha256.Sum256(data)
+	hash := hex.EncodeToString(h[:])
+
+	// Start with declared size=10 but only send 2 bytes
+	startPayload := makeFileStartPayload("abcd1234", "test.txt", 10)
+	fr.HandleFileStart(startPayload)
+
+	chunk := makeFileChunkPayload("abcd1234", data)
+	fr.HandleFileChunk(chunk)
+
+	endPayload := makeFileEndPayload("abcd1234", hash)
+	ack, err := fr.HandleFileEnd(endPayload)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ack.Status != "error" {
+		t.Errorf("status: got %q, want error (size mismatch)", ack.Status)
+	}
+}
+
 func TestHandleFileEnd_OverwriteProtection(t *testing.T) {
 	fr, dir := testReceiver(t)
 
@@ -275,5 +416,21 @@ func TestStaleTransferCleanup(t *testing.T) {
 	staleTmp := filepath.Join(dir, ".stale.txt.phosphor-tmp")
 	if _, err := os.Stat(staleTmp); !os.IsNotExist(err) {
 		t.Error("stale temp file should be removed")
+	}
+}
+
+func TestValidateTransferID(t *testing.T) {
+	valid := []string{"abcd1234", "ABCD1234", "aB3dE6gH"}
+	for _, id := range valid {
+		if err := validateTransferID(id); err != nil {
+			t.Errorf("expected valid ID %q, got error: %v", id, err)
+		}
+	}
+
+	invalid := []string{"", "short", "toolongid!", "abcd!@#$", "abcd 234"}
+	for _, id := range invalid {
+		if err := validateTransferID(id); err == nil {
+			t.Errorf("expected error for ID %q", id)
+		}
 	}
 }

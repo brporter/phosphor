@@ -13,6 +13,8 @@ import {
 
 const FILE_CHUNK_SIZE = 32 * 1024; // 32KB
 const TRANSFER_ID_LEN = 8;
+const ACK_TIMEOUT_MS = 30_000; // 30s timeout for ack
+const COMPLETED_TRANSFER_TTL_MS = 10_000; // remove completed/errored transfers after 10s
 
 export interface FileTransfer {
   id: string;
@@ -33,11 +35,23 @@ interface UseWebSocketOptions {
 
 function generateTransferID(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let id = "";
   const arr = new Uint8Array(TRANSFER_ID_LEN);
   crypto.getRandomValues(arr);
-  for (let i = 0; i < TRANSFER_ID_LEN; i++) {
-    id += chars[arr[i]! % chars.length];
+  // Rejection sampling to avoid modulo bias (256 % 62 != 0)
+  const limit = 256 - (256 % chars.length); // 252
+  let id = "";
+  let i = 0;
+  while (id.length < TRANSFER_ID_LEN) {
+    if (arr[i]! < limit) {
+      id += chars[arr[i]! % chars.length];
+    } else {
+      // Re-roll this byte
+      const extra = new Uint8Array(1);
+      crypto.getRandomValues(extra);
+      arr[i] = extra[0]!;
+      continue;
+    }
+    i++;
   }
   return id;
 }
@@ -171,6 +185,11 @@ export function useWebSocket({
 
     ws.onclose = () => {
       setConnected(false);
+      // Reject all pending ack promises so sendFile doesn't hang
+      for (const [id, resolver] of pendingAcksRef.current) {
+        resolver({ id, status: "error", error: "connection closed" });
+      }
+      pendingAcksRef.current.clear();
     };
 
     ws.onerror = () => {
@@ -204,6 +223,19 @@ export function useWebSocket({
     }
   }, []);
 
+  // Schedule removal of a completed/errored transfer after a delay
+  const scheduleTransferCleanup = useCallback((id: string) => {
+    setTimeout(() => {
+      setFileTransfers((prev) => {
+        const entry = prev.get(id);
+        if (!entry || entry.status === "uploading") return prev;
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+    }, COMPLETED_TRANSFER_TTL_MS);
+  }, []);
+
   const sendFile = useCallback(async (file: File) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -223,51 +255,92 @@ export function useWebSocket({
       return next;
     });
 
-    // Send FileStart and wait for ack before sending chunks.
-    // This ensures we stop early if the CLI rejects the transfer.
-    ws.send(encode(MsgType.FileStart, { id, name: file.name, size: file.size }));
+    const markError = (errorMsg: string) => {
+      setFileTransfers((prev) => {
+        const next = new Map(prev);
+        const existing = next.get(id);
+        if (!existing) return prev;
+        next.set(id, { ...existing, status: "error", error: errorMsg });
+        return next;
+      });
+      scheduleTransferCleanup(id);
+    };
 
-    const startAck = await new Promise<FileAckPayload>((resolve) => {
-      pendingAcksRef.current.set(id, resolve);
-    });
+    try {
+      // Send FileStart and wait for ack before sending chunks.
+      ws.send(encode(MsgType.FileStart, { id, name: file.name, size: file.size }));
 
-    if (startAck.status === "error") {
-      // FileStart was rejected — error is already shown via setFileTransfers
-      return;
+      const startAck = await new Promise<FileAckPayload>((resolve) => {
+        pendingAcksRef.current.set(id, resolve);
+
+        // Timeout: reject if no ack within deadline
+        setTimeout(() => {
+          if (pendingAcksRef.current.has(id)) {
+            pendingAcksRef.current.delete(id);
+            resolve({ id, status: "error", error: "ack timeout" });
+          }
+        }, ACK_TIMEOUT_MS);
+      });
+
+      if (startAck.status === "error") {
+        // FileStart was rejected — error is already shown via setFileTransfers (from FileAck handler)
+        // but if the error came from timeout or connection close, mark it explicitly
+        markError(startAck.error ?? "upload rejected");
+        return;
+      }
+
+      // Stream file in chunks using file.slice() to avoid loading entire file into memory
+      const textEncoder = new TextEncoder();
+      const idBytes = textEncoder.encode(id); // 8 ASCII bytes
+      const hashParts: Uint8Array[] = [];
+
+      let offset = 0;
+      while (offset < file.size) {
+        if (ws.readyState !== WebSocket.OPEN) {
+          markError("connection lost during upload");
+          return;
+        }
+        const end = Math.min(offset + FILE_CHUNK_SIZE, file.size);
+        const blob = file.slice(offset, end);
+        const chunkBuffer = await blob.arrayBuffer();
+        const chunk = new Uint8Array(chunkBuffer);
+        hashParts.push(chunk);
+
+        // Build FileChunk payload: [8-byte ID][raw data]
+        const chunkPayload = new Uint8Array(TRANSFER_ID_LEN + chunk.length);
+        chunkPayload.set(idBytes, 0);
+        chunkPayload.set(chunk, TRANSFER_ID_LEN);
+
+        ws.send(encode(MsgType.FileChunk, chunkPayload));
+        offset = end;
+      }
+
+      // Compute SHA256 incrementally from collected chunks
+      const totalLen = hashParts.reduce((sum, p) => sum + p.length, 0);
+      const fullData = new Uint8Array(totalLen);
+      let pos = 0;
+      for (const part of hashParts) {
+        fullData.set(part, pos);
+        pos += part.length;
+      }
+      const hashBuffer = await crypto.subtle.digest("SHA-256", fullData);
+      const hashArray = new Uint8Array(hashBuffer);
+      const sha256 = Array.from(hashArray)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+
+      // Send FileEnd
+      ws.send(encode(MsgType.FileEnd, { id, sha256 }));
+
+      // Schedule cleanup after completion ack arrives
+      scheduleTransferCleanup(id);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "upload failed";
+      markError(errorMsg);
+      // Clean up any pending ack resolver
+      pendingAcksRef.current.delete(id);
     }
-
-    // Read entire file as ArrayBuffer
-    const fileBuffer = await file.arrayBuffer();
-    const fileData = new Uint8Array(fileBuffer);
-    const textEncoder = new TextEncoder();
-    const idBytes = textEncoder.encode(id); // 8 ASCII bytes
-
-    // Send chunks
-    let offset = 0;
-    while (offset < fileData.length) {
-      if (ws.readyState !== WebSocket.OPEN) return;
-      const end = Math.min(offset + FILE_CHUNK_SIZE, fileData.length);
-      const chunk = fileData.slice(offset, end);
-
-      // Build FileChunk payload: [8-byte ID][raw data]
-      const chunkPayload = new Uint8Array(TRANSFER_ID_LEN + chunk.length);
-      chunkPayload.set(idBytes, 0);
-      chunkPayload.set(chunk, TRANSFER_ID_LEN);
-
-      ws.send(encode(MsgType.FileChunk, chunkPayload));
-      offset = end;
-    }
-
-    // Compute SHA256
-    const hashBuffer = await crypto.subtle.digest("SHA-256", fileData);
-    const hashArray = new Uint8Array(hashBuffer);
-    const sha256 = Array.from(hashArray)
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-
-    // Send FileEnd
-    ws.send(encode(MsgType.FileEnd, { id, sha256 }));
-  }, []);
+  }, [scheduleTransferCleanup]);
 
   return {
     connected,

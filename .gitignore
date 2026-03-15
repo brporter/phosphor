@@ -19,6 +19,7 @@ web/dist/
 # IDE
 .vscode/
 .idea/
+.mcp.json
 *.swp
 *.swo
 
