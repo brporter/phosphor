@@ -10,6 +10,13 @@ import {
   type ProcessExitedPayload,
   type FileAckPayload,
 } from "../lib/protocol";
+import {
+  deriveKey,
+  decrypt as cryptoDecrypt,
+  encrypt as cryptoEncrypt,
+  exportKeyToBase64,
+  importKeyFromBase64,
+} from "../lib/crypto";
 
 const FILE_CHUNK_SIZE = 32 * 1024; // 32KB
 const TRANSFER_ID_LEN = 8;
@@ -69,6 +76,23 @@ export function useWebSocket({
   const [error, setError] = useState<string | null>(null);
   const [processExited, setProcessExited] = useState<number | null>(null);
   const [fileTransfers, setFileTransfers] = useState<Map<string, FileTransfer>>(new Map());
+  const [needsKey, setNeedsKey] = useState(false);
+  const [decryptionError, setDecryptionError] = useState<string | null>(null);
+
+  // Encryption state
+  const cryptoKeyRef = useRef<CryptoKey | null>(null);
+  const encryptionSaltRef = useRef<string | null>(null);
+  const bufferedDataRef = useRef<Uint8Array[]>([]);
+
+  // Handles decryption failure: clears the broken key, removes the cache,
+  // buffers the failed chunk for retry, and re-prompts the user (fixes issues #5, #6).
+  const handleDecryptionFailure = useCallback((failedChunk: Uint8Array) => {
+    cryptoKeyRef.current = null;
+    sessionStorage.removeItem(`phosphor_key_${sessionId}`);
+    setDecryptionError("Decryption failed — wrong key?");
+    setNeedsKey(true);
+    bufferedDataRef.current.push(new Uint8Array(failedChunk));
+  }, [sessionId]);
 
   // Pending ack resolvers: sendFile waits for the FileStart ack before sending chunks.
   const pendingAcksRef = useRef<Map<string, (ack: FileAckPayload) => void>>(new Map());
@@ -98,10 +122,57 @@ export function useWebSocket({
           const info = decodeJSON<JoinedPayload>(payload);
           setJoined(info);
           setConnected(true);
+
+          // Reset all encryption state on every join to prevent stale state
+          // across session navigations (fixes issue #4).
+          cryptoKeyRef.current = null;
+          encryptionSaltRef.current = null;
+          bufferedDataRef.current = [];
+          setNeedsKey(false);
+          setDecryptionError(null);
+
+          if (info.encrypted && info.encryption_salt) {
+            encryptionSaltRef.current = info.encryption_salt;
+
+            // Check sessionStorage for cached derived key bytes (not passphrase).
+            const cachedKeyB64 = sessionStorage.getItem(`phosphor_key_${sessionId}`);
+            if (cachedKeyB64) {
+              importKeyFromBase64(cachedKeyB64).then((key) => {
+                cryptoKeyRef.current = key;
+                // Key validation is deferred to the first Stdout decrypt attempt.
+                // If decryption fails, the Stdout handler will clear the key and re-prompt.
+                const buf = bufferedDataRef.current;
+                bufferedDataRef.current = [];
+                for (const chunk of buf) {
+                  cryptoDecrypt(key, chunk).then(
+                    (pt) => onData(pt),
+                    () => handleDecryptionFailure(chunk)
+                  );
+                }
+              }).catch(() => {
+                sessionStorage.removeItem(`phosphor_key_${sessionId}`);
+                setNeedsKey(true);
+              });
+            } else {
+              setNeedsKey(true);
+            }
+          }
           break;
         }
         case MsgType.Stdout:
-          onData(payload);
+          if (cryptoKeyRef.current) {
+            const keyAtDecryptTime = cryptoKeyRef.current;
+            cryptoDecrypt(keyAtDecryptTime, payload).then(
+              (plaintext) => onData(plaintext),
+              () => handleDecryptionFailure(payload)
+            );
+          } else if (encryptionSaltRef.current) {
+            // Encrypted but no key yet — buffer
+            bufferedDataRef.current.push(new Uint8Array(payload));
+          } else {
+            // Unencrypted
+            onData(payload);
+          }
           break;
         case MsgType.Resize: {
           const sz = decodeJSON<{ cols: number; rows: number }>(payload);
@@ -205,7 +276,13 @@ export function useWebSocket({
   const sendStdin = useCallback((data: Uint8Array) => {
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(encode(MsgType.Stdin, data));
+      if (cryptoKeyRef.current) {
+        cryptoEncrypt(cryptoKeyRef.current, data).then((encrypted) => {
+          ws.send(encode(MsgType.Stdin, encrypted));
+        });
+      } else {
+        ws.send(encode(MsgType.Stdin, data));
+      }
     }
   }, []);
 
@@ -352,6 +429,43 @@ export function useWebSocket({
     }
   }, [scheduleTransferCleanup]);
 
+  const setEncryptionPassphrase = useCallback(async (passphrase: string) => {
+    const salt = encryptionSaltRef.current;
+    if (!salt) return;
+    try {
+      setDecryptionError(null);
+      const key = await deriveKey(passphrase, salt);
+
+      // Try decrypting the first buffered chunk to validate the key
+      if (bufferedDataRef.current.length > 0) {
+        await cryptoDecrypt(key, bufferedDataRef.current[0]!);
+      }
+
+      cryptoKeyRef.current = key;
+      setNeedsKey(false);
+
+      // Cache derived key bytes in sessionStorage (not the passphrase).
+      // The derived key is session-specific and non-reusable, unlike the passphrase
+      // which users may reuse elsewhere. Cleared when the browser is closed.
+      exportKeyToBase64(key).then((b64) => {
+        sessionStorage.setItem(`phosphor_key_${sessionId}`, b64);
+      });
+
+      // Flush buffered data
+      for (const chunk of bufferedDataRef.current) {
+        try {
+          const plaintext = await cryptoDecrypt(key, chunk);
+          onData(plaintext);
+        } catch {
+          // Skip chunks that fail to decrypt (shouldn't happen with correct key)
+        }
+      }
+      bufferedDataRef.current = [];
+    } catch {
+      setDecryptionError("Decryption failed — wrong passphrase?");
+    }
+  }, [onData, sessionId]);
+
   return {
     connected,
     joined,
@@ -362,5 +476,8 @@ export function useWebSocket({
     sendResize,
     sendRestart,
     sendFile,
+    needsKey,
+    decryptionError,
+    setEncryptionPassphrase,
   };
 }

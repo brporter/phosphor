@@ -113,17 +113,21 @@ func (s *Server) HandleViewerWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Send Joined
 	joined := protocol.Joined{
-		Mode:    info.Mode,
-		Cols:    info.Cols,
-		Rows:    info.Rows,
-		Command: info.Command,
+		Mode:           info.Mode,
+		Cols:           info.Cols,
+		Rows:           info.Rows,
+		Command:        info.Command,
+		Encrypted:      info.Encrypted,
+		EncryptionSalt: info.EncryptionSalt,
 	}
 	joinedData, _ := protocol.Encode(protocol.TypeJoined, joined)
 	conn.Write(ctx, websocket.MessageBinary, joinedData)
 
-	// Replay scrollback buffer so the viewer sees prior output
-	if buf := ls.GetScrollback(); len(buf) > 0 {
-		scrollbackMsg, _ := protocol.Encode(protocol.TypeStdout, buf)
+	// Replay scrollback chunks so the viewer sees prior output.
+	// Each chunk is sent as a separate TypeStdout message to preserve
+	// encryption boundaries (each encrypted chunk has its own nonce+tag).
+	for _, chunk := range ls.GetScrollbackChunks() {
+		scrollbackMsg, _ := protocol.Encode(protocol.TypeStdout, chunk)
 		conn.Write(ctx, websocket.MessageBinary, scrollbackMsg)
 	}
 

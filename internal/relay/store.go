@@ -27,6 +27,8 @@ type SessionInfo struct {
 	ProcessRunning  bool
 	DelegateFor     string
 	ServiceIdentity string
+	Encrypted       bool
+	EncryptionSalt  string
 }
 
 // SessionStore persists session metadata. Implementations: MemorySessionStore, RedisSessionStore.

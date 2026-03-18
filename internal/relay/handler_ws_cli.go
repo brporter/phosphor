@@ -126,6 +126,8 @@ func (s *Server) HandleCLIWebSocket(w http.ResponseWriter, r *http.Request) {
 			ProcessRunning:  !hello.Lazy,
 			DelegateFor:     hello.DelegateFor,
 			ServiceIdentity: serviceIdentity,
+			Encrypted:       hello.Encrypted,
+			EncryptionSalt:  hello.EncryptionSalt,
 		}
 
 		if _, err := s.hub.Register(ctx, info, conn); err != nil {

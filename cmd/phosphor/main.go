@@ -18,6 +18,7 @@ func main() {
 	var logout bool
 	var logFile string
 	var debug bool
+	var encryptionKey string
 
 	rootCmd := &cobra.Command{
 		Use:   "phosphor [-- command args...]",
@@ -116,12 +117,13 @@ func main() {
 			}
 
 			app := &cli.App{
-				Config:  cfg,
-				Token:   token,
-				Logger:  logger,
-				Command: command,
-				Mode:    mode,
-				Restart: restart,
+				Config:        cfg,
+				Token:         token,
+				Logger:        logger,
+				Command:       command,
+				Mode:          mode,
+				Restart:       restart,
+				EncryptionKey: encryptionKey,
 			}
 
 			return app.Run(context.Background())
@@ -134,6 +136,7 @@ func main() {
 	rootCmd.Flags().BoolVar(&logout, "logout", false, "Clear cached authentication tokens and exit")
 	rootCmd.Flags().StringVar(&logFile, "log", "", "Write log messages to file")
 	rootCmd.Flags().BoolVar(&debug, "debug", false, "Enable debug logging to stderr")
+	rootCmd.Flags().StringVar(&encryptionKey, "key", "", "Encryption passphrase for end-to-end encryption")
 
 	var provider string
 	var useDeviceCode bool

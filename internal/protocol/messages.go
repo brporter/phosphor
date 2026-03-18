@@ -39,6 +39,10 @@ type Hello struct {
 	Lazy        bool   `json:"lazy,omitempty"`
 	DelegateFor string `json:"delegate_for,omitempty"`
 
+	// End-to-end encryption
+	Encrypted      bool   `json:"encrypted,omitempty"`
+	EncryptionSalt string `json:"encryption_salt,omitempty"` // base64-encoded
+
 	// Set on reconnect attempts
 	SessionID      string `json:"session_id,omitempty"`
 	ReconnectToken string `json:"reconnect_token,omitempty"`
@@ -59,10 +63,12 @@ type Join struct {
 
 // Joined is sent to the viewer after successful join.
 type Joined struct {
-	Mode    string `json:"mode"`
-	Cols    int    `json:"cols"`
-	Rows    int    `json:"rows"`
-	Command string `json:"command"`
+	Mode           string `json:"mode"`
+	Cols           int    `json:"cols"`
+	Rows           int    `json:"rows"`
+	Command        string `json:"command"`
+	Encrypted      bool   `json:"encrypted,omitempty"`
+	EncryptionSalt string `json:"encryption_salt,omitempty"`
 }
 
 // Resize carries terminal dimensions.

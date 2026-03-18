@@ -66,6 +66,8 @@ func (s *RedisSessionStore) Register(ctx context.Context, info SessionInfo) erro
 		"process_running":  strconv.FormatBool(info.ProcessRunning),
 		"delegate_for":     info.DelegateFor,
 		"service_identity": info.ServiceIdentity,
+		"encrypted":        strconv.FormatBool(info.Encrypted),
+		"encryption_salt":  info.EncryptionSalt,
 	})
 
 	pipe.SAdd(ctx, ownerKey(info.OwnerProvider, info.OwnerSub), info.ID)
@@ -113,6 +115,8 @@ func (s *RedisSessionStore) Get(ctx context.Context, sessionID string) (SessionI
 		disconnectedAt, _ = time.Parse(time.RFC3339Nano, vals["disconnected_at"])
 	}
 
+	encrypted := vals["encrypted"] == "true"
+
 	return SessionInfo{
 		ID:              vals["id"],
 		OwnerProvider:   vals["owner_provider"],
@@ -131,6 +135,8 @@ func (s *RedisSessionStore) Get(ctx context.Context, sessionID string) (SessionI
 		ProcessRunning:  processRunning,
 		DelegateFor:     vals["delegate_for"],
 		ServiceIdentity: vals["service_identity"],
+		Encrypted:       encrypted,
+		EncryptionSalt:  vals["encryption_salt"],
 	}, true, nil
 }
 
