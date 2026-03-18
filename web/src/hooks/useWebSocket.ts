@@ -115,7 +115,28 @@ export function useWebSocket({
             setEncrypted(true);
             encryptionSaltRef.current = info.encryption_salt ?? null;
             if (!cryptoKeyRef.current) {
-              setNeedsKey(true);
+              // Check sessionStorage for a cached passphrase
+              const cached = sessionStorage.getItem(`phosphor_key_${sessionId}`);
+              if (cached && info.encryption_salt) {
+                deriveKey(cached, info.encryption_salt).then((key) => {
+                  cryptoKeyRef.current = key;
+                  // Flush any buffered data
+                  const buf = bufferedDataRef.current;
+                  bufferedDataRef.current = [];
+                  for (const chunk of buf) {
+                    cryptoDecrypt(key, chunk).then(
+                      (pt) => onData(pt),
+                      () => { /* ignore failed chunks */ }
+                    );
+                  }
+                }).catch(() => {
+                  // Cached key no longer valid — prompt user
+                  sessionStorage.removeItem(`phosphor_key_${sessionId}`);
+                  setNeedsKey(true);
+                });
+              } else {
+                setNeedsKey(true);
+              }
             }
           }
           break;
@@ -407,6 +428,9 @@ export function useWebSocket({
       cryptoKeyRef.current = key;
       setNeedsKey(false);
 
+      // Cache passphrase in sessionStorage (survives navigation, cleared on browser close)
+      sessionStorage.setItem(`phosphor_key_${sessionId}`, passphrase);
+
       // Flush buffered data
       for (const chunk of bufferedDataRef.current) {
         try {
@@ -420,7 +444,7 @@ export function useWebSocket({
     } catch {
       setDecryptionError("Decryption failed — wrong passphrase?");
     }
-  }, [onData]);
+  }, [onData, sessionId]);
 
   return {
     connected,

@@ -289,35 +289,43 @@ export function TerminalView() {
         </div>
       )}
 
-      {/* Passphrase entry overlay for encrypted sessions */}
+      {/* Passphrase modal for encrypted sessions */}
       {needsKey && (
         <div
           style={{
-            position: "absolute",
+            position: "fixed",
             inset: 0,
-            background: "rgba(5, 8, 8, 0.95)",
+            background: "rgba(0, 0, 0, 0.85)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            zIndex: 10,
+            zIndex: 1000,
           }}
         >
           <div
             style={{
+              background: "var(--bg-card-crt)",
+              border: "1px solid var(--border-crt)",
+              boxShadow: "inset 0 0 20px rgba(0, 255, 65, 0.02)",
+              padding: 24,
+              maxWidth: 420,
               display: "flex",
               flexDirection: "column",
-              gap: 12,
-              padding: 24,
-              border: "1px solid var(--border-crt)",
-              background: "var(--bg-card-crt)",
-              maxWidth: 400,
+              gap: 16,
             }}
           >
-            <div style={{ color: "var(--cyan, #00e5ff)", fontWeight: "bold", fontSize: 14 }}>
+            <div
+              style={{
+                color: "var(--cyan, #00e5ff)",
+                fontWeight: "bold",
+                fontSize: 14,
+                textShadow: "0 0 6px rgba(0, 229, 255, 0.4)",
+              }}
+            >
               // ENCRYPTED SESSION
             </div>
-            <div style={{ color: "var(--text)", fontSize: 13 }}>
-              This session is encrypted. Enter the decryption key to view.
+            <div style={{ color: "var(--text)", fontSize: 13, lineHeight: 1.5 }}>
+              This session is encrypted. Enter the passphrase to decrypt.
             </div>
             {decryptionError && (
               <div style={{ color: "var(--red)", fontSize: 12 }}>
