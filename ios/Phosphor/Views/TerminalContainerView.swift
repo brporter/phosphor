@@ -1,17 +1,25 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct TerminalContainerView: View {
     let sessionId: String
     let auth: AuthViewModel
     @State private var viewModel = TerminalViewModel()
+    @State private var showFilePicker = false
 
     var body: some View {
         ZStack {
             PhosphorTheme.background.ignoresSafeArea()
+            ScanlineOverlay().ignoresSafeArea()
 
             VStack(spacing: 0) {
                 // Status bar
                 statusBar
+
+                // Upload progress
+                if !viewModel.activeUploads.isEmpty {
+                    uploadProgressBar
+                }
 
                 // Terminal
                 switch viewModel.connectionState {
@@ -62,6 +70,18 @@ struct TerminalContainerView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         #endif
+        .fileImporter(
+            isPresented: $showFilePicker,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let url = urls.first {
+                if url.startAccessingSecurityScopedResource() {
+                    viewModel.sendFile(url: url)
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+        }
         .onAppear {
             if let token = auth.getToken() {
                 viewModel.connect(sessionId: sessionId, token: token)
@@ -89,6 +109,7 @@ struct TerminalContainerView: View {
                 Text(info.command)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(PhosphorTheme.green)
+                    .glowText()
                     .lineLimit(1)
 
                 Text(info.mode.uppercased())
@@ -107,6 +128,23 @@ struct TerminalContainerView: View {
             }
 
             Spacer()
+
+            // Upload button (PTY mode only)
+            if viewModel.connectionState == .connected && !viewModel.isPipeMode {
+                Button {
+                    showFilePicker = true
+                } label: {
+                    Label("Upload", systemImage: "arrow.up.doc")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(PhosphorTheme.green)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .strokeBorder(PhosphorTheme.green, lineWidth: 1)
+                        )
+                }
+            }
 
             if viewModel.viewerCount > 0 {
                 Label("\(viewModel.viewerCount)", systemImage: "eye")
@@ -142,6 +180,52 @@ struct TerminalContainerView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .background(PhosphorTheme.panel)
+    }
+
+    private var uploadProgressBar: some View {
+        VStack(spacing: 4) {
+            ForEach(viewModel.activeUploads) { transfer in
+                HStack(spacing: 8) {
+                    Text(transfer.name)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(PhosphorTheme.text)
+                        .lineLimit(1)
+
+                    if transfer.status == .error {
+                        Text(transfer.error ?? "error")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(PhosphorTheme.red)
+                            .lineLimit(1)
+                    } else {
+                        GeometryReader { geo in
+                            let pct = transfer.size > 0
+                                ? CGFloat(transfer.bytesWritten) / CGFloat(transfer.size)
+                                : 0
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(PhosphorTheme.border)
+                                    .frame(height: 6)
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(PhosphorTheme.green)
+                                    .frame(width: geo.size.width * pct, height: 6)
+                            }
+                        }
+                        .frame(height: 6)
+
+                        let pctInt = transfer.size > 0
+                            ? Int(Double(transfer.bytesWritten) / Double(transfer.size) * 100)
+                            : 0
+                        Text("\(pctInt)%")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(PhosphorTheme.green)
+                            .frame(width: 36, alignment: .trailing)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
         .background(PhosphorTheme.panel)
     }
 

@@ -6,10 +6,13 @@ struct SessionCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                // Command name
-                Text(session.command)
+                // Hostname + command
+                Text(session.hostname.isEmpty
+                    ? (session.command.isEmpty ? session.mode : session.command)
+                    : "\(session.hostname): \(session.command.isEmpty ? session.mode : session.command)")
                     .font(.system(size: 15, weight: .semibold, design: .monospaced))
                     .foregroundStyle(PhosphorTheme.green)
+                    .glowText()
                     .lineLimit(1)
 
                 Spacer()
@@ -22,6 +25,19 @@ struct SessionCardView: View {
                     .padding(.vertical, 3)
                     .background(PhosphorTheme.amber)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                // Ready badge (lazy session not yet running)
+                if session.lazy && !session.processRunning && !session.processExited {
+                    Text("READY")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(PhosphorTheme.green)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .strokeBorder(PhosphorTheme.green, lineWidth: 1)
+                        )
+                }
 
                 // Exited badge
                 if session.processExited {
@@ -57,11 +73,6 @@ struct SessionCardView: View {
             }
         }
         .padding(12)
-        .background(PhosphorTheme.card)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(PhosphorTheme.border, lineWidth: 1)
-        )
+        .crtCardStyle()
     }
 }

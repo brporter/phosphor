@@ -9,6 +9,7 @@ struct SessionListView: View {
     var body: some View {
         ZStack {
             PhosphorTheme.background.ignoresSafeArea()
+            ScanlineOverlay().ignoresSafeArea()
 
             if viewModel.isLoading && viewModel.sessions.isEmpty {
                 ProgressView()

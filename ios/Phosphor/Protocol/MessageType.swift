@@ -15,7 +15,13 @@ enum MessageType: UInt8 {
     case processExited  = 0x17
     case restart        = 0x18
     case viewerCount    = 0x20
-    case mode        = 0x21
-    case ping        = 0x30
-    case pong        = 0x31
+    case mode           = 0x21
+    case spawnRequest   = 0x22
+    case spawnComplete  = 0x23
+    case ping           = 0x30
+    case pong           = 0x31
+    case fileStart      = 0x40
+    case fileChunk      = 0x41
+    case fileEnd        = 0x42
+    case fileAck        = 0x43
 }
