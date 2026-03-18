@@ -1,6 +1,6 @@
 module github.com/brporter/phosphor
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/UserExistsError/conpty v0.1.4
@@ -10,7 +10,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.3
 	github.com/matoous/go-nanoid/v2 v2.1.0
 	github.com/spf13/cobra v1.8.1
-	golang.org/x/sys v0.41.0
+	golang.org/x/sys v0.42.0
 )
 
 require (
@@ -22,6 +22,7 @@ require (
 	github.com/redis/go-redis/v9 v9.18.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
+	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/oauth2 v0.28.0 // indirect
-	golang.org/x/term v0.40.0 // indirect
+	golang.org/x/term v0.41.0 // indirect
 )

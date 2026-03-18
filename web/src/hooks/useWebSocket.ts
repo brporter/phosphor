@@ -10,6 +10,11 @@ import {
   type ProcessExitedPayload,
   type FileAckPayload,
 } from "../lib/protocol";
+import {
+  deriveKey,
+  decrypt as cryptoDecrypt,
+  encrypt as cryptoEncrypt,
+} from "../lib/crypto";
 
 const FILE_CHUNK_SIZE = 32 * 1024; // 32KB
 const TRANSFER_ID_LEN = 8;
@@ -69,6 +74,14 @@ export function useWebSocket({
   const [error, setError] = useState<string | null>(null);
   const [processExited, setProcessExited] = useState<number | null>(null);
   const [fileTransfers, setFileTransfers] = useState<Map<string, FileTransfer>>(new Map());
+  const [encrypted, setEncrypted] = useState(false);
+  const [needsKey, setNeedsKey] = useState(false);
+  const [decryptionError, setDecryptionError] = useState<string | null>(null);
+
+  // Encryption state
+  const cryptoKeyRef = useRef<CryptoKey | null>(null);
+  const encryptionSaltRef = useRef<string | null>(null);
+  const bufferedDataRef = useRef<Uint8Array[]>([]);
 
   // Pending ack resolvers: sendFile waits for the FileStart ack before sending chunks.
   const pendingAcksRef = useRef<Map<string, (ack: FileAckPayload) => void>>(new Map());
@@ -98,10 +111,31 @@ export function useWebSocket({
           const info = decodeJSON<JoinedPayload>(payload);
           setJoined(info);
           setConnected(true);
+          if (info.encrypted) {
+            setEncrypted(true);
+            encryptionSaltRef.current = info.encryption_salt ?? null;
+            if (!cryptoKeyRef.current) {
+              setNeedsKey(true);
+            }
+          }
           break;
         }
         case MsgType.Stdout:
-          onData(payload);
+          if (cryptoKeyRef.current) {
+            // Decrypt then deliver
+            cryptoDecrypt(cryptoKeyRef.current, payload).then(
+              (plaintext) => onData(plaintext),
+              () => {
+                setDecryptionError("Decryption failed — wrong key?");
+              }
+            );
+          } else if (encryptionSaltRef.current) {
+            // Encrypted but no key yet — buffer
+            bufferedDataRef.current.push(new Uint8Array(payload));
+          } else {
+            // Unencrypted
+            onData(payload);
+          }
           break;
         case MsgType.Resize: {
           const sz = decodeJSON<{ cols: number; rows: number }>(payload);
@@ -205,7 +239,13 @@ export function useWebSocket({
   const sendStdin = useCallback((data: Uint8Array) => {
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(encode(MsgType.Stdin, data));
+      if (cryptoKeyRef.current) {
+        cryptoEncrypt(cryptoKeyRef.current, data).then((encrypted) => {
+          ws.send(encode(MsgType.Stdin, encrypted));
+        });
+      } else {
+        ws.send(encode(MsgType.Stdin, data));
+      }
     }
   }, []);
 
@@ -352,6 +392,36 @@ export function useWebSocket({
     }
   }, [scheduleTransferCleanup]);
 
+  const setEncryptionPassphrase = useCallback(async (passphrase: string) => {
+    const salt = encryptionSaltRef.current;
+    if (!salt) return;
+    try {
+      setDecryptionError(null);
+      const key = await deriveKey(passphrase, salt);
+
+      // Try decrypting the first buffered chunk to validate the key
+      if (bufferedDataRef.current.length > 0) {
+        await cryptoDecrypt(key, bufferedDataRef.current[0]!);
+      }
+
+      cryptoKeyRef.current = key;
+      setNeedsKey(false);
+
+      // Flush buffered data
+      for (const chunk of bufferedDataRef.current) {
+        try {
+          const plaintext = await cryptoDecrypt(key, chunk);
+          onData(plaintext);
+        } catch {
+          // Skip chunks that fail to decrypt (shouldn't happen with correct key)
+        }
+      }
+      bufferedDataRef.current = [];
+    } catch {
+      setDecryptionError("Decryption failed — wrong passphrase?");
+    }
+  }, [onData]);
+
   return {
     connected,
     joined,
@@ -362,5 +432,9 @@ export function useWebSocket({
     sendResize,
     sendRestart,
     sendFile,
+    encrypted,
+    needsKey,
+    decryptionError,
+    setEncryptionPassphrase,
   };
 }

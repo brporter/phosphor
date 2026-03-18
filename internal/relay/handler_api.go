@@ -16,6 +16,7 @@ type sessionListItem struct {
 	ProcessExited  bool   `json:"process_exited"`
 	Lazy           bool   `json:"lazy"`
 	ProcessRunning bool   `json:"process_running"`
+	Encrypted      bool   `json:"encrypted"`
 }
 
 // HandleDestroySession terminates a session. Only the session owner can destroy it.
@@ -99,6 +100,7 @@ func (s *Server) HandleListSessions(w http.ResponseWriter, r *http.Request) {
 			ProcessExited:  info.ProcessExited,
 			Lazy:           info.Lazy,
 			ProcessRunning: info.ProcessRunning,
+			Encrypted:      info.Encrypted,
 		})
 	}
 

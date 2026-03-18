@@ -13,6 +13,7 @@ export interface SessionData {
   process_exited: boolean;
   lazy: boolean;
   process_running: boolean;
+  encrypted: boolean;
 }
 
 interface SessionCardProps {
@@ -63,6 +64,9 @@ export function SessionCard({ session, token, onDestroyed }: SessionCardProps) {
             <span className="badge badge-amber">[{session.mode}]</span>
             {session.lazy && !session.process_running && !session.process_exited && (
               <span className="badge badge-green">[ready]</span>
+            )}
+            {session.encrypted && (
+              <span className="badge badge-cyan">[encrypted]</span>
             )}
             {session.process_exited && (
               <span className="badge badge-red">[exited]</span>

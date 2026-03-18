@@ -33,6 +33,8 @@ export interface JoinedPayload {
   cols: number;
   rows: number;
   command: string;
+  encrypted?: boolean;
+  encryption_salt?: string;
 }
 
 export interface ErrorPayload {

@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -15,18 +16,24 @@ import (
 	"syscall"
 	"time"
 
+	phcrypto "github.com/brporter/phosphor/internal/crypto"
 	"github.com/brporter/phosphor/internal/protocol"
 	"golang.org/x/term"
 )
 
 // App orchestrates the CLI: connects to the relay, spawns the process, and bridges I/O.
 type App struct {
-	Config  Config
-	Token   string
-	Logger  *slog.Logger
-	Command []string // for PTY mode
-	Mode    string   // "pty" or "pipe"
-	Restart string   // "manual", "auto", "never"
+	Config        Config
+	Token         string
+	Logger        *slog.Logger
+	Command       []string // for PTY mode
+	Mode          string   // "pty" or "pipe"
+	Restart       string   // "manual", "auto", "never"
+	EncryptionKey string   // passphrase for end-to-end encryption (optional)
+
+	// Derived encryption state (set once on first connection)
+	aesKey []byte
+	salt   []byte
 }
 
 var errProcessExited = errors.New("process exited")
@@ -266,6 +273,20 @@ func (a *App) runConnection(
 	}
 	defer ws.Close()
 
+	// Derive encryption key on first connection if passphrase provided
+	if a.EncryptionKey != "" && a.aesKey == nil {
+		salt, err := phcrypto.GenerateSalt()
+		if err != nil {
+			return connectionResult{err: fmt.Errorf("generate encryption salt: %w", err)}
+		}
+		key, err := phcrypto.DeriveKey(a.EncryptionKey, salt)
+		if err != nil {
+			return connectionResult{err: fmt.Errorf("derive encryption key: %w", err)}
+		}
+		a.salt = salt
+		a.aesKey = key
+	}
+
 	// Send Hello
 	hostname, _ := os.Hostname()
 	hello := protocol.Hello{
@@ -277,6 +298,10 @@ func (a *App) runConnection(
 		Hostname:       hostname,
 		SessionID:      *sessionID,
 		ReconnectToken: *reconnectToken,
+	}
+	if a.aesKey != nil {
+		hello.Encrypted = true
+		hello.EncryptionSalt = base64.StdEncoding.EncodeToString(a.salt)
 	}
 	if err := ws.Send(appCtx, protocol.TypeHello, hello); err != nil {
 		return connectionResult{err: fmt.Errorf("send hello: %w", err)}
@@ -377,7 +402,17 @@ func (a *App) runConnection(
 				// Echo to local terminal
 				os.Stdout.Write(buf[:n])
 
-				if sendErr := ws.Send(connCtx, protocol.TypeStdout, buf[:n]); sendErr != nil {
+				data := buf[:n]
+				if a.aesKey != nil {
+					var encErr error
+					data, encErr = phcrypto.Encrypt(a.aesKey, data)
+					if encErr != nil {
+						a.Logger.Error("encrypt stdout failed", "err", encErr)
+						closeConnLost()
+						return
+					}
+				}
+				if sendErr := ws.Send(connCtx, protocol.TypeStdout, data); sendErr != nil {
 					a.Logger.Debug("send stdout failed", "err", sendErr)
 					closeConnLost()
 					return
@@ -414,7 +449,16 @@ func (a *App) runConnection(
 			switch mt {
 			case protocol.TypeStdin:
 				if a.Mode == "pty" {
-					if _, writeErr := proc.Write(pl); writeErr != nil {
+					input := pl
+					if a.aesKey != nil {
+						var decErr error
+						input, decErr = phcrypto.Decrypt(a.aesKey, pl)
+						if decErr != nil {
+							a.Logger.Error("decrypt stdin failed", "err", decErr)
+							continue
+						}
+					}
+					if _, writeErr := proc.Write(input); writeErr != nil {
 						a.Logger.Error("write to pty", "err", writeErr)
 					}
 				}

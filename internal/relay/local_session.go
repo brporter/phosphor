@@ -20,11 +20,12 @@ type LocalSession struct {
 	bus       MessageBus // nil in single-instance mode
 	logger    *slog.Logger
 
-	mu         sync.RWMutex
-	cliConn    *websocket.Conn            // nil for viewer-only sessions
-	viewers    map[string]*websocket.Conn // viewer ID → conn
-	closed     bool
-	scrollback []byte // ring buffer of recent stdout for viewer replay
+	mu               sync.RWMutex
+	cliConn          *websocket.Conn            // nil for viewer-only sessions
+	viewers          map[string]*websocket.Conn // viewer ID → conn
+	closed           bool
+	scrollbackChunks [][]byte // chunked stdout for viewer replay (preserves encryption boundaries)
+	scrollbackSize   int      // total bytes across all chunks
 
 	cancelOutput func() // unsubscribe from output channel
 	cancelInput  func() // unsubscribe from input channel
@@ -234,27 +235,36 @@ func (ls *LocalSession) NotifyViewerCount(ctx context.Context) {
 	ls.SendToCLI(ctx, data)
 }
 
-// AppendScrollback appends raw stdout bytes to the scrollback buffer.
-// Caller must hold ls.mu.Lock().
+// AppendScrollback stores a copy of a stdout chunk for viewer replay.
+// Each chunk is stored separately to preserve encryption boundaries.
 func (ls *LocalSession) AppendScrollback(data []byte) {
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
-	ls.scrollback = append(ls.scrollback, data...)
-	if len(ls.scrollback) > scrollbackCapacity {
-		ls.scrollback = ls.scrollback[len(ls.scrollback)-scrollbackCapacity:]
+	chunk := make([]byte, len(data))
+	copy(chunk, data)
+	ls.scrollbackChunks = append(ls.scrollbackChunks, chunk)
+	ls.scrollbackSize += len(data)
+	// Trim oldest chunks if over capacity
+	for ls.scrollbackSize > scrollbackCapacity && len(ls.scrollbackChunks) > 0 {
+		ls.scrollbackSize -= len(ls.scrollbackChunks[0])
+		ls.scrollbackChunks = ls.scrollbackChunks[1:]
 	}
 }
 
-// GetScrollback returns a copy of the scrollback buffer (or nil if empty).
-func (ls *LocalSession) GetScrollback() []byte {
+// GetScrollbackChunks returns copies of all scrollback chunks (or nil if empty).
+func (ls *LocalSession) GetScrollbackChunks() [][]byte {
 	ls.mu.RLock()
 	defer ls.mu.RUnlock()
-	if len(ls.scrollback) == 0 {
+	if len(ls.scrollbackChunks) == 0 {
 		return nil
 	}
-	buf := make([]byte, len(ls.scrollback))
-	copy(buf, ls.scrollback)
-	return buf
+	chunks := make([][]byte, len(ls.scrollbackChunks))
+	for i, c := range ls.scrollbackChunks {
+		chunk := make([]byte, len(c))
+		copy(chunk, c)
+		chunks[i] = chunk
+	}
+	return chunks
 }
 
 // SetLastInputSource records which end last sent keyboard input.
@@ -322,7 +332,8 @@ func (ls *LocalSession) Close() {
 		return
 	}
 	ls.closed = true
-	ls.scrollback = nil
+	ls.scrollbackChunks = nil
+	ls.scrollbackSize = 0
 
 	endMsg, _ := protocol.Encode(protocol.TypeEnd, nil)
 	for _, conn := range ls.viewers {

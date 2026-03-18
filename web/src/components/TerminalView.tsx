@@ -30,7 +30,9 @@ export function TerminalView() {
     termRef.current?.write("\r\n\x1b[1;31m[Session ended]\x1b[0m\r\n");
   }, []);
 
-  const { connected, joined, error, processExited, fileTransfers, sendStdin, sendResize, sendRestart, sendFile } = useWebSocket({
+  const [keyInput, setKeyInput] = useState("");
+
+  const { connected, joined, error, processExited, fileTransfers, sendStdin, sendResize, sendRestart, sendFile, encrypted, needsKey, decryptionError, setEncryptionPassphrase } = useWebSocket({
     sessionId: id ?? "",
     token: getToken(),
     onData,
@@ -239,6 +241,13 @@ export function TerminalView() {
               />
             </>
           )}
+          {joined && (
+            encrypted ? (
+              <span className="badge badge-cyan">[encrypted]</span>
+            ) : (
+              <span className="badge badge-amber">[unencrypted]</span>
+            )
+          )}
           {processExited !== null ? (
             <>
               <span className="badge badge-amber">[exited ({processExited})]</span>
@@ -277,6 +286,75 @@ export function TerminalView() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Passphrase entry overlay for encrypted sessions */}
+      {needsKey && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "rgba(5, 8, 8, 0.95)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+              padding: 24,
+              border: "1px solid var(--border-crt)",
+              background: "var(--bg-card-crt)",
+              maxWidth: 400,
+            }}
+          >
+            <div style={{ color: "var(--cyan, #00e5ff)", fontWeight: "bold", fontSize: 14 }}>
+              // ENCRYPTED SESSION
+            </div>
+            <div style={{ color: "var(--text)", fontSize: 13 }}>
+              This session is encrypted. Enter the decryption key to view.
+            </div>
+            {decryptionError && (
+              <div style={{ color: "var(--red)", fontSize: 12 }}>
+                {decryptionError}
+              </div>
+            )}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (keyInput) {
+                  setEncryptionPassphrase(keyInput);
+                }
+              }}
+              style={{ display: "flex", gap: 8 }}
+            >
+              <input
+                type="password"
+                value={keyInput}
+                onChange={(e) => setKeyInput(e.target.value)}
+                placeholder="Passphrase"
+                autoFocus
+                style={{
+                  flex: 1,
+                  background: "#0a0a0a",
+                  border: "1px solid var(--border-crt)",
+                  color: "var(--green)",
+                  padding: "6px 10px",
+                  fontFamily: "inherit",
+                  fontSize: 13,
+                  outline: "none",
+                }}
+              />
+              <button type="submit" className="btn-action">
+                [decrypt]
+              </button>
+            </form>
+          </div>
         </div>
       )}
 
