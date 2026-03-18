@@ -32,7 +32,7 @@ export function TerminalView() {
 
   const [keyInput, setKeyInput] = useState("");
 
-  const { connected, joined, error, processExited, fileTransfers, sendStdin, sendResize, sendRestart, sendFile, encrypted, needsKey, decryptionError, setEncryptionPassphrase } = useWebSocket({
+  const { connected, joined, error, processExited, fileTransfers, sendStdin, sendResize, sendRestart, sendFile, needsKey, decryptionError, setEncryptionPassphrase } = useWebSocket({
     sessionId: id ?? "",
     token: getToken(),
     onData,
@@ -242,7 +242,7 @@ export function TerminalView() {
             </>
           )}
           {joined && (
-            encrypted ? (
+            joined.encrypted ? (
               <span className="badge badge-cyan">[encrypted]</span>
             ) : (
               <span className="badge badge-amber">[unencrypted]</span>

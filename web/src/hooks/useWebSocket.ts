@@ -14,6 +14,8 @@ import {
   deriveKey,
   decrypt as cryptoDecrypt,
   encrypt as cryptoEncrypt,
+  exportKeyToBase64,
+  importKeyFromBase64,
 } from "../lib/crypto";
 
 const FILE_CHUNK_SIZE = 32 * 1024; // 32KB
@@ -74,7 +76,6 @@ export function useWebSocket({
   const [error, setError] = useState<string | null>(null);
   const [processExited, setProcessExited] = useState<number | null>(null);
   const [fileTransfers, setFileTransfers] = useState<Map<string, FileTransfer>>(new Map());
-  const [encrypted, setEncrypted] = useState(false);
   const [needsKey, setNeedsKey] = useState(false);
   const [decryptionError, setDecryptionError] = useState<string | null>(null);
 
@@ -82,6 +83,16 @@ export function useWebSocket({
   const cryptoKeyRef = useRef<CryptoKey | null>(null);
   const encryptionSaltRef = useRef<string | null>(null);
   const bufferedDataRef = useRef<Uint8Array[]>([]);
+
+  // Handles decryption failure: clears the broken key, removes the cache,
+  // buffers the failed chunk for retry, and re-prompts the user (fixes issues #5, #6).
+  const handleDecryptionFailure = useCallback((failedChunk: Uint8Array) => {
+    cryptoKeyRef.current = null;
+    sessionStorage.removeItem(`phosphor_key_${sessionId}`);
+    setDecryptionError("Decryption failed — wrong key?");
+    setNeedsKey(true);
+    bufferedDataRef.current.push(new Uint8Array(failedChunk));
+  }, [sessionId]);
 
   // Pending ack resolvers: sendFile waits for the FileStart ack before sending chunks.
   const pendingAcksRef = useRef<Map<string, (ack: FileAckPayload) => void>>(new Map());
@@ -111,44 +122,49 @@ export function useWebSocket({
           const info = decodeJSON<JoinedPayload>(payload);
           setJoined(info);
           setConnected(true);
-          if (info.encrypted) {
-            setEncrypted(true);
-            encryptionSaltRef.current = info.encryption_salt ?? null;
-            if (!cryptoKeyRef.current) {
-              // Check sessionStorage for a cached passphrase
-              const cached = sessionStorage.getItem(`phosphor_key_${sessionId}`);
-              if (cached && info.encryption_salt) {
-                deriveKey(cached, info.encryption_salt).then((key) => {
-                  cryptoKeyRef.current = key;
-                  // Flush any buffered data
-                  const buf = bufferedDataRef.current;
-                  bufferedDataRef.current = [];
-                  for (const chunk of buf) {
-                    cryptoDecrypt(key, chunk).then(
-                      (pt) => onData(pt),
-                      () => { /* ignore failed chunks */ }
-                    );
-                  }
-                }).catch(() => {
-                  // Cached key no longer valid — prompt user
-                  sessionStorage.removeItem(`phosphor_key_${sessionId}`);
-                  setNeedsKey(true);
-                });
-              } else {
+
+          // Reset all encryption state on every join to prevent stale state
+          // across session navigations (fixes issue #4).
+          cryptoKeyRef.current = null;
+          encryptionSaltRef.current = null;
+          bufferedDataRef.current = [];
+          setNeedsKey(false);
+          setDecryptionError(null);
+
+          if (info.encrypted && info.encryption_salt) {
+            encryptionSaltRef.current = info.encryption_salt;
+
+            // Check sessionStorage for cached derived key bytes (not passphrase).
+            const cachedKeyB64 = sessionStorage.getItem(`phosphor_key_${sessionId}`);
+            if (cachedKeyB64) {
+              importKeyFromBase64(cachedKeyB64).then((key) => {
+                cryptoKeyRef.current = key;
+                // Key validation is deferred to the first Stdout decrypt attempt.
+                // If decryption fails, the Stdout handler will clear the key and re-prompt.
+                const buf = bufferedDataRef.current;
+                bufferedDataRef.current = [];
+                for (const chunk of buf) {
+                  cryptoDecrypt(key, chunk).then(
+                    (pt) => onData(pt),
+                    () => handleDecryptionFailure(chunk)
+                  );
+                }
+              }).catch(() => {
+                sessionStorage.removeItem(`phosphor_key_${sessionId}`);
                 setNeedsKey(true);
-              }
+              });
+            } else {
+              setNeedsKey(true);
             }
           }
           break;
         }
         case MsgType.Stdout:
           if (cryptoKeyRef.current) {
-            // Decrypt then deliver
-            cryptoDecrypt(cryptoKeyRef.current, payload).then(
+            const keyAtDecryptTime = cryptoKeyRef.current;
+            cryptoDecrypt(keyAtDecryptTime, payload).then(
               (plaintext) => onData(plaintext),
-              () => {
-                setDecryptionError("Decryption failed — wrong key?");
-              }
+              () => handleDecryptionFailure(payload)
             );
           } else if (encryptionSaltRef.current) {
             // Encrypted but no key yet — buffer
@@ -428,8 +444,12 @@ export function useWebSocket({
       cryptoKeyRef.current = key;
       setNeedsKey(false);
 
-      // Cache passphrase in sessionStorage (survives navigation, cleared on browser close)
-      sessionStorage.setItem(`phosphor_key_${sessionId}`, passphrase);
+      // Cache derived key bytes in sessionStorage (not the passphrase).
+      // The derived key is session-specific and non-reusable, unlike the passphrase
+      // which users may reuse elsewhere. Cleared when the browser is closed.
+      exportKeyToBase64(key).then((b64) => {
+        sessionStorage.setItem(`phosphor_key_${sessionId}`, b64);
+      });
 
       // Flush buffered data
       for (const chunk of bufferedDataRef.current) {
@@ -456,7 +476,6 @@ export function useWebSocket({
     sendResize,
     sendRestart,
     sendFile,
-    encrypted,
     needsKey,
     decryptionError,
     setEncryptionPassphrase,

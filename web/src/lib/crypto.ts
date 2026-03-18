@@ -26,7 +26,27 @@ export async function deriveKey(
     },
     keyMaterial,
     { name: "AES-GCM", length: KEY_LENGTH },
-    false,
+    true, // extractable — needed to export for sessionStorage caching
+    ["encrypt", "decrypt"]
+  );
+}
+
+// Export a CryptoKey's raw bytes as a base64 string for sessionStorage caching.
+// This stores the derived key (session-specific, not reusable) rather than the passphrase.
+export async function exportKeyToBase64(key: CryptoKey): Promise<string> {
+  const raw = await crypto.subtle.exportKey("raw", key);
+  return btoa(String.fromCharCode(...new Uint8Array(raw)));
+}
+
+// Import raw key bytes from a base64 string (from sessionStorage cache).
+// The imported key is non-extractable — it can only be used for encrypt/decrypt.
+export async function importKeyFromBase64(base64: string): Promise<CryptoKey> {
+  const raw = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  return crypto.subtle.importKey(
+    "raw",
+    raw,
+    { name: "AES-GCM" },
+    false, // non-extractable once imported from cache
     ["encrypt", "decrypt"]
   );
 }
