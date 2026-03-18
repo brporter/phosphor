@@ -13,6 +13,7 @@ enum WebSocketEvent {
     case processExited(Int)
     case restart
     case disconnected
+    case fileAck(FileAckPayload)
 }
 
 /// Manages a WebSocket connection to the relay for viewing a session.
@@ -82,6 +83,28 @@ final class WebSocketManager: NSObject, @unchecked Sendable {
 
     func sendRestart() {
         let message = ProtocolCodec.encode(type: .restart)
+        webSocketTask?.send(.data(message)) { _ in }
+    }
+
+    func sendFileStart(id: String, name: String, size: Int) {
+        let payload = FileStartPayload(id: id, name: name, size: size)
+        let message = ProtocolCodec.encode(type: .fileStart, json: payload)
+        webSocketTask?.send(.data(message)) { _ in }
+    }
+
+    func sendFileChunk(id: String, chunk: Data) {
+        // FileChunk payload: [8-byte ASCII ID][raw data]
+        let idData = Data(id.utf8)
+        var payload = Data(capacity: idData.count + chunk.count)
+        payload.append(idData)
+        payload.append(chunk)
+        let message = ProtocolCodec.encode(type: .fileChunk, payload: payload)
+        webSocketTask?.send(.data(message)) { _ in }
+    }
+
+    func sendFileEnd(id: String, sha256: String) {
+        let payload = FileEndPayload(id: id, sha256: sha256)
+        let message = ProtocolCodec.encode(type: .fileEnd, json: payload)
         webSocketTask?.send(.data(message)) { _ in }
     }
 
@@ -157,6 +180,10 @@ final class WebSocketManager: NSObject, @unchecked Sendable {
             }
         case .restart:
             continuation?.yield(.restart)
+        case .fileAck:
+            if let ack: FileAckPayload = try? ProtocolCodec.decodeJSON(payload) {
+                continuation?.yield(.fileAck(ack))
+            }
         case .ping:
             let pong = ProtocolCodec.encode(type: .pong)
             webSocketTask?.send(.data(pong)) { _ in }
