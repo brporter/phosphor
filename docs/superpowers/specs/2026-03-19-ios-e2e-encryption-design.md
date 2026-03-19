@@ -24,7 +24,9 @@ A stateless utility struct with three functions:
 
 - `deriveKey(passphrase: String, salt: Data) -> SymmetricKey` — PBKDF2 via CommonCrypto (`CCKeyDerivationPBKDF`), returns a 256-bit `CryptoKit.SymmetricKey`.
 - `encrypt(key: SymmetricKey, plaintext: Data) throws -> Data` — `AES.GCM.seal()`, returns `nonce + ciphertext + tag` as a contiguous `Data`.
-- `decrypt(key: SymmetricKey, data: Data) throws -> Data` — Splits input at byte 12, constructs `AES.GCM.SealedBox(nonce:ciphertext:tag:)` from the combined portion, calls `open()`.
+- `decrypt(key: SymmetricKey, data: Data) throws -> Data` — Guards that input is at least 28 bytes (12 nonce + 16 tag minimum), then passes the full blob to `AES.GCM.SealedBox(combined: data)` which expects `nonce + ciphertext + tag` in that order. Calls `AES.GCM.open()` to decrypt.
+
+All functions are pure and stateless — safe to call from any isolation context. The struct should conform to `Sendable`.
 
 Dependencies: `CryptoKit` (AES-GCM) and `CommonCrypto` (PBKDF2). Both are Apple frameworks — no third-party dependencies.
 
@@ -65,11 +67,12 @@ enum WebSocketEvent {
 Changes to message handling:
 
 - When a `Joined` message is received with `encrypted == true`: emit `.encryptionRequired(salt:)` with the base64 salt string. Do not transition to `.connected` yet.
-- Add a mutable `encryptionKey: SymmetricKey?` property. When set, the manager applies encryption/decryption to data messages.
-- **Stdout receive path**: if `encryptionKey` is set, call `CryptoManager.decrypt()` on the payload before forwarding via `.stdout(Data)`. On failure, emit a new `.decryptionFailed` event.
+- Add mutable properties: `encryptionKey: SymmetricKey?` and `bufferedEncryptedStdout: [Data]` (array of raw encrypted chunks).
+- **Stdout receive path (no key yet)**: if session is encrypted but `encryptionKey` is nil, append the raw payload to `bufferedEncryptedStdout`.
+- **Stdout receive path (key set)**: call `CryptoManager.decrypt()` on the payload before forwarding via `.stdout(Data)`. On failure, emit `.decryptionFailed(rawData: Data)` carrying the failed chunk so the ViewModel can re-buffer it for retry.
 - **Stdin send path**: if `encryptionKey` is set, call `CryptoManager.encrypt()` on the data before encoding and sending.
 
-Add a method `setEncryptionKey(_ key: SymmetricKey)` that stores the key and transitions connection state to `.connected`.
+Add a method `setEncryptionKey(_ key: SymmetricKey)` that stores the key, then decrypts and flushes all `bufferedEncryptedStdout` chunks in order (emitting `.stdout` for each). After flushing, transitions connection state to `.connected`.
 
 ## ViewModel Updates
 
@@ -93,8 +96,8 @@ Private stored property: `var encryptionKey: SymmetricKey?` (in-memory only, nev
 Behavior:
 
 - On `.encryptionRequired(salt:)` event from WebSocket: set `encryptionState = .passphraseRequired(salt:)`.
-- `submitPassphrase(_ passphrase: String, salt: String)`: derive key via `CryptoManager.deriveKey()`, store in `encryptionKey`, pass to `WebSocketManager.setEncryptionKey()`, set `encryptionState = .unlocked`.
-- On `.decryptionFailed` event: clear `encryptionKey`, set `encryptionState = .failed` (which re-shows the passphrase view with an error message).
+- `submitPassphrase(_ passphrase: String, salt: String)`: derive key via `CryptoManager.deriveKey()`. Before committing: if there are buffered stdout chunks, trial-decrypt the first one. If trial decryption fails, set `encryptionState = .failed` immediately (wrong passphrase) without storing the key. If it succeeds (or no buffered chunks yet), store in `encryptionKey`, pass to `WebSocketManager.setEncryptionKey()` (which flushes buffered data), set `encryptionState = .unlocked`.
+- On `.decryptionFailed(rawData:)` event: clear `encryptionKey`, re-buffer the failed chunk in `WebSocketManager.bufferedEncryptedStdout`, set `encryptionState = .failed` (which re-shows the passphrase view with an error message).
 - Unencrypted sessions: `encryptionState` stays `.none`, no passphrase view shown.
 
 ## Passphrase View
@@ -130,11 +133,13 @@ The existing `TerminalContainerView` switches on `encryptionState`:
 5. TerminalViewModel sets encryptionState = .passphraseRequired(salt:)
 6. TerminalContainerView shows PassphraseView
 7. User enters passphrase, taps Unlock
-8. TerminalViewModel.submitPassphrase() derives key, stores in memory
-9. WebSocketManager receives key, transitions to .connected
-10. Stdout arrives → WebSocketManager decrypts → TerminalViewModel → terminal UI
-11. User types → TerminalViewModel → WebSocketManager encrypts → relay → CLI
-12. On decryption failure: clear key, show PassphraseView with error
+8. TerminalViewModel.submitPassphrase() derives key, trial-decrypts first buffered chunk
+9. If trial fails: show error, stay on PassphraseView. If succeeds: store key.
+10. WebSocketManager.setEncryptionKey() flushes buffered stdout (decrypt + emit each)
+11. WebSocketManager transitions to .connected
+12. Subsequent stdout arrives → WebSocketManager decrypts → TerminalViewModel → terminal UI
+13. User types → TerminalViewModel → WebSocketManager encrypts → relay → CLI
+14. On decryption failure: clear key, re-buffer failed chunk, show PassphraseView with error
 ```
 
 ## Key Caching
@@ -148,9 +153,22 @@ No Keychain or disk persistence. This matches the web client's `sessionStorage` 
 
 ## Error Handling
 
-- **Wrong passphrase**: The first decrypted stdout message will fail AES-GCM authentication. On failure, the key is cleared and the passphrase view is re-shown with an error message.
+- **Wrong passphrase**: Detected at two points: (1) in `submitPassphrase()` via trial decryption of the first buffered chunk — immediate rejection without entering unlocked state; (2) at runtime if a later message fails decryption — key is cleared, failed chunk is re-buffered, and the passphrase view is re-shown.
 - **Unencrypted session with encryption fields absent**: `encrypted` defaults to `nil`/`false`, passphrase view is never shown. No behavior change.
 - **Encryption key set but message is not encrypted**: This cannot happen — encryption is session-wide. If the CLI sends encrypted, all messages are encrypted.
+
+## Additional Code Fixups
+
+**`.mode` event handler in `TerminalViewModel.swift`**: The existing handler reconstructs `JoinedPayload` without the new fields. It must carry forward `encrypted` and `encryptionSalt` when rebuilding the payload.
+
+## Testing
+
+**Unit tests for `CryptoManager`**: Add a test file using known test vectors from the Go implementation (`internal/crypto/crypto_test.go`). Specifically:
+
+- Round-trip: encrypt then decrypt with the same key, verify plaintext matches.
+- Cross-platform interop: derive a key from a known passphrase + salt, decrypt a ciphertext produced by the Go implementation, verify the plaintext. Extract test vectors by running the Go tests and capturing intermediate values.
+- Wrong key: verify that decryption with a different key throws.
+- Short input: verify that input < 28 bytes throws.
 
 ## Files Changed
 
