@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Events emitted by the WebSocket connection.
 enum WebSocketEvent {
@@ -14,6 +15,8 @@ enum WebSocketEvent {
     case restart
     case disconnected
     case fileAck(FileAckPayload)
+    case encryptionRequired(salt: String)
+    case decryptionFailed(rawData: Data)
 }
 
 /// Manages a WebSocket connection to the relay for viewing a session.
@@ -22,6 +25,9 @@ final class WebSocketManager: NSObject, @unchecked Sendable {
     private var webSocketTask: URLSessionWebSocketTask?
     private var session: URLSession?
     private var continuation: AsyncStream<WebSocketEvent>.Continuation?
+    private var encryptionKey: SymmetricKey?
+    private var isEncrypted = false
+    private var bufferedEncryptedStdout: [Data] = []
 
     /// Connect to the relay and return a stream of events.
     func connect(baseURL: String, sessionId: String, token: String) -> AsyncStream<WebSocketEvent> {
@@ -71,7 +77,14 @@ final class WebSocketManager: NSObject, @unchecked Sendable {
     }
 
     func sendStdin(_ data: Data) {
-        let message = ProtocolCodec.encode(type: .stdin, payload: data)
+        let payload: Data
+        if isEncrypted, let key = encryptionKey {
+            guard let encrypted = try? CryptoManager.encrypt(key: key, plaintext: data) else { return }
+            payload = encrypted
+        } else {
+            payload = data
+        }
+        let message = ProtocolCodec.encode(type: .stdin, payload: payload)
         webSocketTask?.send(.data(message)) { _ in }
     }
 
@@ -84,6 +97,38 @@ final class WebSocketManager: NSObject, @unchecked Sendable {
     func sendRestart() {
         let message = ProtocolCodec.encode(type: .restart)
         webSocketTask?.send(.data(message)) { _ in }
+    }
+
+    /// Set the derived encryption key and flush buffered stdout.
+    /// Returns false if any buffered chunk fails to decrypt (wrong key).
+    func setEncryptionKey(_ key: SymmetricKey) -> Bool {
+        // Trial-decrypt first buffered chunk to validate key
+        if let firstChunk = bufferedEncryptedStdout.first {
+            do {
+                _ = try CryptoManager.decrypt(key: key, data: firstChunk)
+            } catch {
+                return false
+            }
+        }
+
+        self.encryptionKey = key
+
+        // Flush buffered stdout
+        for chunk in bufferedEncryptedStdout {
+            if let decrypted = try? CryptoManager.decrypt(key: key, data: chunk) {
+                continuation?.yield(.stdout(decrypted))
+            }
+        }
+        bufferedEncryptedStdout.removeAll()
+        return true
+    }
+
+    func clearEncryptionKey() {
+        encryptionKey = nil
+    }
+
+    func reBufferChunk(_ data: Data) {
+        bufferedEncryptedStdout.append(data)
     }
 
     func sendFileStart(id: String, name: String, size: Int) {
@@ -115,6 +160,9 @@ final class WebSocketManager: NSObject, @unchecked Sendable {
         session = nil
         continuation?.finish()
         continuation = nil
+        encryptionKey = nil
+        isEncrypted = false
+        bufferedEncryptedStdout.removeAll()
     }
 
     // MARK: - Private
@@ -148,10 +196,27 @@ final class WebSocketManager: NSObject, @unchecked Sendable {
         switch type {
         case .joined:
             if let info: JoinedPayload = try? ProtocolCodec.decodeJSON(payload) {
+                if info.encrypted == true, let salt = info.encryptionSalt {
+                    isEncrypted = true
+                    continuation?.yield(.encryptionRequired(salt: salt))
+                }
                 continuation?.yield(.joined(info))
             }
         case .stdout:
-            continuation?.yield(.stdout(payload))
+            if isEncrypted {
+                if let key = encryptionKey {
+                    do {
+                        let decrypted = try CryptoManager.decrypt(key: key, data: payload)
+                        continuation?.yield(.stdout(decrypted))
+                    } catch {
+                        continuation?.yield(.decryptionFailed(rawData: payload))
+                    }
+                } else {
+                    bufferedEncryptedStdout.append(payload)
+                }
+            } else {
+                continuation?.yield(.stdout(payload))
+            }
         case .resize:
             if let sz: ResizePayload = try? ProtocolCodec.decodeJSON(payload) {
                 continuation?.yield(.resize(sz.cols, sz.rows))
