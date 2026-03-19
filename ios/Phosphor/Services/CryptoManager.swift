@@ -15,7 +15,7 @@ struct CryptoManager: Sendable {
         let passphraseData = Data(passphrase.utf8)
         var derivedKeyBytes = [UInt8](repeating: 0, count: keySize)
 
-        derivedKeyBytes.withUnsafeMutableBytes { derivedKeyBuffer in
+        _ = derivedKeyBytes.withUnsafeMutableBytes { derivedKeyBuffer in
             passphraseData.withUnsafeBytes { passphraseBuffer in
                 salt.withUnsafeBytes { saltBuffer in
                     CCKeyDerivationPBKDF(
