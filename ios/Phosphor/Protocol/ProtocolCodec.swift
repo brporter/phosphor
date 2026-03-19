@@ -75,6 +75,13 @@ struct JoinedPayload: Codable {
     let cols: Int
     let rows: Int
     let command: String
+    let encrypted: Bool?
+    let encryptionSalt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case mode, cols, rows, command, encrypted
+        case encryptionSalt = "encryption_salt"
+    }
 }
 
 struct ResizePayload: Codable {

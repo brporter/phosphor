@@ -225,7 +225,7 @@ final class TerminalViewModel {
 
         case .mode(let mode):
             joinedInfo = joinedInfo.map {
-                JoinedPayload(mode: mode, cols: $0.cols, rows: $0.rows, command: $0.command)
+                JoinedPayload(mode: mode, cols: $0.cols, rows: $0.rows, command: $0.command, encrypted: $0.encrypted, encryptionSalt: $0.encryptionSalt)
             }
 
         case .end:
