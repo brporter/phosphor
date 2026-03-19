@@ -24,15 +24,28 @@ struct TerminalContainerView: View {
                 // Terminal
                 switch viewModel.connectionState {
                 case .connecting:
-                    Spacer()
-                    VStack(spacing: 12) {
-                        ProgressView()
-                            .tint(PhosphorTheme.green)
-                        Text("Connecting...")
-                            .font(.system(size: 14, design: .monospaced))
-                            .foregroundStyle(PhosphorTheme.text)
+                    switch viewModel.encryptionState {
+                    case .passphraseRequired(let salt):
+                        PassphraseView(salt: salt, isFailed: false) { passphrase in
+                            viewModel.submitPassphrase(passphrase, salt: salt)
+                        }
+
+                    case .failed(let salt):
+                        PassphraseView(salt: salt, isFailed: true) { passphrase in
+                            viewModel.submitPassphrase(passphrase, salt: salt)
+                        }
+
+                    default:
+                        Spacer()
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .tint(PhosphorTheme.green)
+                            Text("Connecting...")
+                                .font(.system(size: 14, design: .monospaced))
+                                .foregroundStyle(PhosphorTheme.text)
+                        }
+                        Spacer()
                     }
-                    Spacer()
 
                 case .error:
                     Spacer()
