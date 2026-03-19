@@ -10,6 +10,13 @@ enum ConnectionState: String {
     case error
 }
 
+enum EncryptionState: Equatable {
+    case none
+    case passphraseRequired(salt: String)
+    case unlocked
+    case failed(salt: String)
+}
+
 struct FileTransfer: Identifiable {
     let id: String
     let name: String
@@ -37,6 +44,7 @@ final class TerminalViewModel {
     var errorMessage: String?
     var viewerCount: Int = 0
     var processExitCode: Int?
+    var encryptionState: EncryptionState = .none
     var fileTransfers: [String: FileTransfer] = [:]
 
     /// Callback invoked with stdout data to feed into SwiftTerm.
@@ -86,6 +94,7 @@ final class TerminalViewModel {
         receiveTask = nil
         wsManager.disconnect()
         connectionState = .disconnected
+        encryptionState = .none
     }
 
     func sendStdin(_ data: Data) {
@@ -99,6 +108,21 @@ final class TerminalViewModel {
 
     func sendRestart() {
         wsManager.sendRestart()
+    }
+
+    func submitPassphrase(_ passphrase: String, salt: String) {
+        guard let saltData = Data(base64Encoded: salt) else {
+            encryptionState = .failed(salt: salt)
+            return
+        }
+        let key = CryptoManager.deriveKey(passphrase: passphrase, salt: saltData)
+
+        if wsManager.setEncryptionKey(key) {
+            encryptionState = .unlocked
+            connectionState = .connected
+        } else {
+            encryptionState = .failed(salt: salt)
+        }
     }
 
     func sendFile(url: URL) {
@@ -204,7 +228,12 @@ final class TerminalViewModel {
         switch event {
         case .joined(let info):
             joinedInfo = info
-            connectionState = .connected
+            if info.encrypted == true {
+                // Connection state stays .connecting until passphrase is submitted
+                // encryptionRequired event will set the encryption state
+            } else {
+                connectionState = .connected
+            }
             onResize?(info.cols, info.rows)
 
         case .stdout(let data):
@@ -266,6 +295,17 @@ final class TerminalViewModel {
                     break
                 }
                 fileTransfers[ack.id] = transfer
+            }
+
+        case .encryptionRequired(let salt):
+            encryptionState = .passphraseRequired(salt: salt)
+
+        case .decryptionFailed(let rawData):
+            wsManager.clearEncryptionKey()
+            wsManager.reBufferChunk(rawData)
+            if case .unlocked = encryptionState,
+               let salt = joinedInfo?.encryptionSalt {
+                encryptionState = .failed(salt: salt)
             }
 
         case .disconnected:
