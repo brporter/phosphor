@@ -61,8 +61,21 @@ struct TerminalContainerView: View {
                     Spacer()
 
                 default:
-                    TerminalRepresentable(viewModel: viewModel)
-                        .ignoresSafeArea(.keyboard, edges: .bottom)
+                    switch viewModel.encryptionState {
+                    case .passphraseRequired(let salt):
+                        PassphraseView(salt: salt, isFailed: false) { passphrase in
+                            viewModel.submitPassphrase(passphrase, salt: salt)
+                        }
+
+                    case .failed(let salt):
+                        PassphraseView(salt: salt, isFailed: true) { passphrase in
+                            viewModel.submitPassphrase(passphrase, salt: salt)
+                        }
+
+                    default:
+                        TerminalRepresentable(viewModel: viewModel)
+                            .ignoresSafeArea(.keyboard, edges: .bottom)
+                    }
                 }
             }
         }
@@ -119,6 +132,12 @@ struct TerminalContainerView: View {
                     .padding(.vertical, 2)
                     .background(PhosphorTheme.amber)
                     .clipShape(RoundedRectangle(cornerRadius: 3))
+
+                if viewModel.joinedInfo?.encrypted == true {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(PhosphorTheme.green)
+                }
 
                 if viewModel.isPipeMode {
                     Text("VIEW ONLY")
