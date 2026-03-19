@@ -48,6 +48,9 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(PhosphorTheme.background)
         }
+        .navigationDestination(for: String.self) { sessionId in
+            TerminalContainerView(sessionId: sessionId, auth: auth)
+        }
         #else
         NavigationStack {
             SessionListView(viewModel: vm, auth: auth)
