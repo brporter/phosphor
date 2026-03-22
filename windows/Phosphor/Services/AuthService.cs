@@ -22,8 +22,12 @@ public static class AuthService
         var sessionId = loginResponse.SessionId;
         var authUrl = loginResponse.AuthUrl;
 
-        // Show WebView2 in a ContentDialog
+        // Show WebView2 in a ContentDialog.
+        // We must initialize CoreWebView2 AFTER the dialog is shown (Loaded),
+        // because EnsureCoreWebView2Async requires the control to be in a live visual tree.
         var webView = new WebView2 { Width = 500, Height = 600 };
+        var tcs = new TaskCompletionSource<bool>();
+
         var dialog = new ContentDialog
         {
             Title = $"Sign in with {provider}",
@@ -32,20 +36,28 @@ public static class AuthService
             XamlRoot = xamlRoot,
         };
 
-        var tcs = new TaskCompletionSource<bool>();
-
-        await webView.EnsureCoreWebView2Async();
-        webView.CoreWebView2.NavigationStarting += (_, args) =>
+        webView.Loaded += async (_, _) =>
         {
-            if (args.Uri.StartsWith("phosphor://auth/callback", StringComparison.OrdinalIgnoreCase))
+            try
             {
-                args.Cancel = true; // Suppress navigation to custom scheme
-                tcs.TrySetResult(true);
+                await webView.EnsureCoreWebView2Async();
+                webView.CoreWebView2.NavigationStarting += (_, args) =>
+                {
+                    if (args.Uri.StartsWith("phosphor://auth/callback", StringComparison.OrdinalIgnoreCase))
+                    {
+                        args.Cancel = true; // Suppress navigation to custom scheme
+                        tcs.TrySetResult(true);
+                        dialog.Hide();
+                    }
+                };
+                webView.CoreWebView2.Navigate(authUrl);
+            }
+            catch (Exception ex)
+            {
+                tcs.TrySetException(ex);
                 dialog.Hide();
             }
         };
-
-        webView.CoreWebView2.Navigate(authUrl);
 
         var dialogResult = await dialog.ShowAsync();
         if (dialogResult == ContentDialogResult.None && !tcs.Task.IsCompleted)
@@ -54,15 +66,31 @@ public static class AuthService
             return null;
         }
 
-        // Poll for token
-        for (int i = 0; i < 30; i++) // 30 attempts, 1s apart = 30s timeout
+        // If WebView2 init failed, propagate the exception
+        if (tcs.Task.IsFaulted)
+            throw tcs.Task.Exception!.InnerException!;
+
+        // Poll for token with retry on transient errors
+        const int maxAttempts = 30;
+        for (int i = 0; i < maxAttempts; i++)
         {
             ct.ThrowIfCancellationRequested();
-            var poll = await api.PollAuthAsync(sessionId, ct);
-            if (poll.Status == "complete" && poll.IdToken is not null)
+
+            try
             {
-                return poll.IdToken;
+                var poll = await api.PollAuthAsync(sessionId, ct);
+                if (poll.Status == "complete" && poll.IdToken is not null)
+                {
+                    return poll.IdToken;
+                }
             }
+            catch (HttpRequestException) when (i < maxAttempts - 1)
+            {
+                // Transient network error — wait longer before retrying
+                await Task.Delay(2000, ct);
+                continue;
+            }
+
             await Task.Delay(1000, ct);
         }
 

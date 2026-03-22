@@ -69,6 +69,8 @@ public sealed partial class AuthViewModel : ObservableObject
     [RelayCommand]
     private async Task LoadProvidersAsync()
     {
+        ErrorMessage = null;
+        IsLoading = true;
         try
         {
             _api.Configure(RelayUrl, "");
@@ -78,6 +80,10 @@ public sealed partial class AuthViewModel : ObservableObject
         catch (Exception ex)
         {
             ErrorMessage = $"Failed to connect to relay: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
         }
     }
 

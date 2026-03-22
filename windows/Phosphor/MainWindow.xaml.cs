@@ -61,7 +61,15 @@ public sealed partial class MainWindow : Window
         if (settings.Values.TryGetValue("window_width", out var w) &&
             settings.Values.TryGetValue("window_height", out var h))
         {
-            AppWindow.Resize(new Windows.Graphics.SizeInt32((int)w, (int)h));
+            try
+            {
+                AppWindow.Resize(new Windows.Graphics.SizeInt32(
+                    Convert.ToInt32(w), Convert.ToInt32(h)));
+            }
+            catch (Exception)
+            {
+                // Fallback to default size if stored values have unexpected type
+            }
         }
 
         Closed += (_, _) =>
@@ -71,6 +79,8 @@ public sealed partial class MainWindow : Window
             settings.Values["window_height"] = size.Height;
         };
     }
+
+    public ApiClient GetApiClient() => _api;
 
     public void NavigateToLogin()
     {

@@ -1,5 +1,5 @@
 // Binary protocol: [type_byte][payload]
-// Mirrors internal/protocol/messages.go
+// Mirrors internal/protocol/messages.go and windows/Phosphor/Models/ProtocolMessages.cs — kept manually in sync.
 
 export const MsgType = {
   Stdout: 0x01,

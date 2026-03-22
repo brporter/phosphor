@@ -14,9 +14,12 @@ public sealed partial class TerminalViewModel : ObservableObject, IDisposable
     private readonly ApiClient _api;
     private CryptoHelper? _crypto;
     private readonly List<ReadOnlyMemory<byte>> _encryptedBuffer = [];
+    private readonly object _encryptedBufferLock = new();
     private string? _encryptionSalt;
     private readonly Microsoft.UI.Dispatching.DispatcherQueue _dispatcher =
         Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+
+    private const long MaxUploadSize = 100 * 1024 * 1024; // 100MB relay limit
 
     [ObservableProperty]
     public partial string ConnectionState { get; set; } = "connecting"; // connecting, connected, disconnected, error
@@ -77,13 +80,19 @@ public sealed partial class TerminalViewModel : ObservableObject, IDisposable
                     // Wrong passphrase — clear key and re-prompt
                     _crypto.Dispose();
                     _crypto = new CryptoHelper();
-                    NeedsPassphrase = true;
-                    ErrorMessage = "Decryption failed — wrong passphrase?";
+                    _dispatcher.TryEnqueue(() =>
+                    {
+                        NeedsPassphrase = true;
+                        ErrorMessage = "Decryption failed — wrong passphrase?";
+                    });
                 }
             }
             else if (IsEncrypted && (_crypto is null || !_crypto.HasKey))
             {
-                _encryptedBuffer.Add(data.ToArray());
+                lock (_encryptedBufferLock)
+                {
+                    _encryptedBuffer.Add(data.ToArray());
+                }
             }
             else
             {
@@ -93,84 +102,117 @@ public sealed partial class TerminalViewModel : ObservableObject, IDisposable
 
         _ws.OnJoined = joined =>
         {
-            Mode = joined.Mode;
-            Command = joined.Command;
-            IsEncrypted = joined.Encrypted;
-            ConnectionState = "connected";
-            SetTerminalSize?.Invoke(joined.Cols, joined.Rows);
-
-            if (joined.Encrypted && !string.IsNullOrEmpty(joined.EncryptionSalt))
+            _dispatcher.TryEnqueue(() =>
             {
-                _crypto = new CryptoHelper();
-                _encryptionSalt = joined.EncryptionSalt;
-                NeedsPassphrase = true;
-            }
+                Mode = joined.Mode;
+                Command = joined.Command;
+                IsEncrypted = joined.Encrypted;
+                ConnectionState = "connected";
+                SetTerminalSize?.Invoke(joined.Cols, joined.Rows);
 
-            OnPropertyChanged(nameof(IsPty));
+                if (joined.Encrypted && !string.IsNullOrEmpty(joined.EncryptionSalt))
+                {
+                    _crypto = new CryptoHelper();
+                    _encryptionSalt = joined.EncryptionSalt;
+                    NeedsPassphrase = true;
+                }
+
+                OnPropertyChanged(nameof(IsPty));
+            });
         };
 
         _ws.OnReconnect = r =>
         {
-            CliConnected = r.Status == "reconnected";
+            _dispatcher.TryEnqueue(() => CliConnected = r.Status == "reconnected");
         };
 
         _ws.OnError = e =>
         {
-            ErrorMessage = $"[{e.Code}] {e.Message}";
-            ConnectionState = "error";
+            _dispatcher.TryEnqueue(() =>
+            {
+                ErrorMessage = $"[{e.Code}] {e.Message}";
+                ConnectionState = "error";
+            });
         };
 
         _ws.OnProcessExited = e =>
         {
-            ExitCode = e.ExitCode;
-            OnPropertyChanged(nameof(HasExited));
+            _dispatcher.TryEnqueue(() =>
+            {
+                ExitCode = e.ExitCode;
+                OnPropertyChanged(nameof(HasExited));
+            });
         };
 
-        _ws.OnViewerCount = vc => ViewerCount = vc.Count;
+        _ws.OnViewerCount = vc =>
+        {
+            _dispatcher.TryEnqueue(() => ViewerCount = vc.Count);
+        };
+
         _ws.OnMode = m =>
         {
-            Mode = m.Mode;
-            OnPropertyChanged(nameof(IsPty));
+            _dispatcher.TryEnqueue(() =>
+            {
+                Mode = m.Mode;
+                OnPropertyChanged(nameof(IsPty));
+            });
         };
 
         _ws.OnFileAck += ack =>
         {
-            var transfer = Transfers.FirstOrDefault(t => t.Id == ack.Id);
-            if (transfer is null) return;
-
-            transfer.Status = ack.Status;
-            if (ack.BytesWritten.HasValue)
-                transfer.BytesWritten = ack.BytesWritten.Value;
-            if (ack.Error is not null)
-                transfer.Error = ack.Error;
-
-            if (ack.Status is "complete" or "error")
+            _dispatcher.TryEnqueue(() =>
             {
-                // Auto-remove after 10 seconds, dispatched to UI thread
-                _ = Task.Delay(TimeSpan.FromSeconds(10)).ContinueWith(_ =>
+                var transfer = Transfers.FirstOrDefault(t => t.Id == ack.Id);
+                if (transfer is null) return;
+
+                transfer.Status = ack.Status;
+                if (ack.BytesWritten.HasValue)
+                    transfer.BytesWritten = ack.BytesWritten.Value;
+                if (ack.Error is not null)
+                    transfer.Error = ack.Error;
+
+                if (ack.Status is "complete" or "error")
                 {
-                    _dispatcher.TryEnqueue(() => Transfers.Remove(transfer));
-                });
-            }
+                    // Auto-remove after 10 seconds
+                    _ = Task.Delay(TimeSpan.FromSeconds(10)).ContinueWith(_ =>
+                    {
+                        _dispatcher.TryEnqueue(() => Transfers.Remove(transfer));
+                    });
+                }
+            });
         };
 
         _ws.OnEnd = () =>
         {
-            ConnectionState = "disconnected";
+            _dispatcher.TryEnqueue(() => ConnectionState = "disconnected");
         };
 
         _ws.OnDisconnected = ex =>
         {
-            ConnectionState = "disconnected";
-            ErrorMessage = $"Connection lost: {ex.Message}";
+            _dispatcher.TryEnqueue(() =>
+            {
+                ConnectionState = "disconnected";
+                ErrorMessage = $"Connection lost: {ex.Message}";
+            });
         };
     }
 
     public async Task ConnectAsync(string sessionId)
     {
+        // Reset crypto state from any previous session
+        _crypto?.Dispose();
+        _crypto = null;
+        _encryptionSalt = null;
+        lock (_encryptedBufferLock)
+        {
+            _encryptedBuffer.Clear();
+        }
+
         ConnectionState = "connecting";
         ErrorMessage = null;
         ExitCode = null;
+        NeedsPassphrase = false;
+        IsEncrypted = false;
 
         try
         {
@@ -192,12 +234,29 @@ public sealed partial class TerminalViewModel : ObservableObject, IDisposable
         if (_crypto is null || string.IsNullOrEmpty(passphrase) || _encryptionSalt is null) return;
 
         // Derive key from passphrase + salt stored from Joined message
-        DeriveKey(passphrase, _encryptionSalt);
+        // Convert passphrase to char[] so we can zero it after use
+        var passphraseChars = passphrase.ToCharArray();
+        try
+        {
+            DeriveKey(passphraseChars, _encryptionSalt);
+        }
+        finally
+        {
+            Array.Clear(passphraseChars);
+        }
+
         NeedsPassphrase = false;
         ErrorMessage = null;
 
         // Flush buffered messages
-        foreach (var data in _encryptedBuffer)
+        List<ReadOnlyMemory<byte>> bufferedData;
+        lock (_encryptedBufferLock)
+        {
+            bufferedData = new List<ReadOnlyMemory<byte>>(_encryptedBuffer);
+            _encryptedBuffer.Clear();
+        }
+
+        foreach (var data in bufferedData)
         {
             try
             {
@@ -213,10 +272,9 @@ public sealed partial class TerminalViewModel : ObservableObject, IDisposable
                 return;
             }
         }
-        _encryptedBuffer.Clear();
     }
 
-    public void DeriveKey(string passphrase, string saltBase64)
+    public void DeriveKey(char[] passphrase, string saltBase64)
     {
         var salt = Convert.FromBase64String(saltBase64);
         _crypto?.DeriveKey(passphrase, salt);
@@ -256,9 +314,34 @@ public sealed partial class TerminalViewModel : ObservableObject, IDisposable
     public async Task UploadFileAsync(string filePath, CancellationToken ct = default)
     {
         var fileInfo = new FileInfo(filePath);
+
+        // Pre-validate file size against relay limit
+        if (fileInfo.Length > MaxUploadSize)
+        {
+            var transfer = new FileTransfer(
+                GenerateTransferId(), fileInfo.Name, fileInfo.Length)
+            {
+                Status = "error",
+                Error = $"File too large ({fileInfo.Length / (1024 * 1024)}MB). Maximum is {MaxUploadSize / (1024 * 1024)}MB."
+            };
+            Transfers.Add(transfer);
+            return;
+        }
+        if (fileInfo.Length <= 0)
+        {
+            var transfer = new FileTransfer(
+                GenerateTransferId(), fileInfo.Name, fileInfo.Length)
+            {
+                Status = "error",
+                Error = "File is empty."
+            };
+            Transfers.Add(transfer);
+            return;
+        }
+
         var id = GenerateTransferId();
-        var transfer = new FileTransfer(id, fileInfo.Name, fileInfo.Length);
-        Transfers.Add(transfer);
+        var transferObj = new FileTransfer(id, fileInfo.Name, fileInfo.Length);
+        Transfers.Add(transferObj);
 
         // Send FileStart
         await _ws.SendFileStartAsync(new FileStartPayload
@@ -268,7 +351,7 @@ public sealed partial class TerminalViewModel : ObservableObject, IDisposable
             Size = fileInfo.Length,
         }, ct);
 
-        transfer.Status = "pending";
+        transferObj.Status = "pending";
 
         // Wait for FileAck "accepted" (30s timeout)
         var acceptTcs = new TaskCompletionSource<bool>();
@@ -327,7 +410,12 @@ public sealed partial class TerminalViewModel : ObservableObject, IDisposable
     {
         await _ws.DisconnectAsync();
         _crypto?.Dispose();
-        _encryptedBuffer.Clear();
+        _crypto = null;
+        _encryptionSalt = null;
+        lock (_encryptedBufferLock)
+        {
+            _encryptedBuffer.Clear();
+        }
     }
 
     public void Dispose()

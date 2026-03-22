@@ -87,7 +87,11 @@
         <!-- Upload progress -->
         <StackPanel x:Name="TransferPanel" Grid.Row="2"
                     Background="{StaticResource CardBackgroundBrush}"
-                    Visibility="Collapsed" Padding="12,8" />
+                    Visibility="Collapsed" Padding="12,8">
+            <TextBlock Text="Uploads" FontSize="11"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Margin="0,0,0,4" />
+        </StackPanel>
 
         <!-- Passphrase dialog is shown as ContentDialog, not inline -->
     </Grid>

@@ -13,7 +13,8 @@ public sealed class WebSocketService : IDisposable
     private ClientWebSocket? _ws;
     private CancellationTokenSource? _cts;
     private PeriodicTimer? _pingTimer;
-    private readonly byte[] _receiveBuffer = new byte[1024 * 1024]; // 1MB max message
+    private const int InitialBufferSize = 64 * 1024;  // 64KB initial
+    private const int MaxMessageSize = 4 * 1024 * 1024; // 4MB hard limit
 
     // Callbacks — set by TerminalViewModel before connecting
     public Action<ReadOnlyMemory<byte>>? OnStdout { get; set; }
@@ -26,6 +27,9 @@ public sealed class WebSocketService : IDisposable
     public event Action<FileAckPayload>? OnFileAck;
     public Action? OnEnd { get; set; }
     public Action<Exception>? OnDisconnected { get; set; }
+
+    // Track active file transfer IDs for cleanup on disconnect
+    private readonly HashSet<string> _activeTransferIds = [];
 
     /// <summary>
     /// Connect to a session and start the receive loop.
@@ -61,17 +65,35 @@ public sealed class WebSocketService : IDisposable
     {
         try
         {
+            var buffer = new byte[InitialBufferSize];
+
             while (!ct.IsCancellationRequested && _ws?.State == WebSocketState.Open)
             {
-                // Accumulate frames until EndOfMessage
+                // Accumulate frames until EndOfMessage, growing buffer as needed
                 int totalBytes = 0;
                 ValueWebSocketReceiveResult result;
                 do
                 {
+                    if (totalBytes == buffer.Length)
+                    {
+                        // Buffer full but message not complete — grow or reject
+                        if (buffer.Length >= MaxMessageSize)
+                        {
+                            // Message exceeds hard limit — skip it and close
+                            OnDisconnected?.Invoke(
+                                new InvalidOperationException($"Message exceeded {MaxMessageSize} byte limit"));
+                            return;
+                        }
+                        var newSize = Math.Min(buffer.Length * 2, MaxMessageSize);
+                        var newBuffer = new byte[newSize];
+                        buffer.AsSpan(0, totalBytes).CopyTo(newBuffer);
+                        buffer = newBuffer;
+                    }
+
                     result = await _ws.ReceiveAsync(
-                        _receiveBuffer.AsMemory(totalBytes), ct);
+                        buffer.AsMemory(totalBytes), ct);
                     totalBytes += result.Count;
-                } while (!result.EndOfMessage && totalBytes < _receiveBuffer.Length);
+                } while (!result.EndOfMessage);
 
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
@@ -79,7 +101,7 @@ public sealed class WebSocketService : IDisposable
                     return;
                 }
 
-                var data = new ReadOnlyMemory<byte>(_receiveBuffer, 0, totalBytes);
+                var data = new ReadOnlyMemory<byte>(buffer, 0, totalBytes);
                 var (type, payload) = ProtocolCodec.Decode(data);
 
                 switch (type)
@@ -113,6 +135,8 @@ public sealed class WebSocketService : IDisposable
                         break;
                     case MsgType.FileAck:
                         var ack = ProtocolCodec.DecodeJson(payload, PhosphorJsonContext.Default.FileAckPayload);
+                        if (ack.Status is "complete" or "error")
+                            _activeTransferIds.Remove(ack.Id);
                         OnFileAck?.Invoke(ack);
                         break;
                     case MsgType.End:
@@ -165,6 +189,7 @@ public sealed class WebSocketService : IDisposable
 
     public async Task SendFileStartAsync(FileStartPayload start, CancellationToken ct = default)
     {
+        _activeTransferIds.Add(start.Id);
         var msg = ProtocolCodec.EncodeJson(MsgType.FileStart, start, PhosphorJsonContext.Default.FileStartPayload);
         await SendRawAsync(msg, ct);
     }
@@ -172,7 +197,18 @@ public sealed class WebSocketService : IDisposable
     public async Task SendFileChunkAsync(string transferId, ReadOnlyMemory<byte> chunk, CancellationToken ct = default)
     {
         // FileChunk payload: [8-byte ASCII ID][chunk data]
-        var idBytes = System.Text.Encoding.ASCII.GetBytes(transferId.PadRight(8)[..8]);
+        // Transfer IDs must be exactly 8 alphanumeric characters.
+        if (transferId is null)
+            throw new ArgumentNullException(nameof(transferId));
+        if (transferId.Length != 8)
+            throw new ArgumentException("FileChunk transferId must be exactly 8 characters.", nameof(transferId));
+        foreach (var c in transferId)
+        {
+            if (!char.IsLetterOrDigit(c))
+                throw new ArgumentException("FileChunk transferId must contain only alphanumeric characters.", nameof(transferId));
+        }
+
+        var idBytes = System.Text.Encoding.ASCII.GetBytes(transferId);
         var payload = new byte[idBytes.Length + chunk.Length];
         idBytes.CopyTo(payload, 0);
         chunk.CopyTo(payload.AsMemory(idBytes.Length));
@@ -196,6 +232,7 @@ public sealed class WebSocketService : IDisposable
 
     /// <summary>
     /// Send End message and close the WebSocket cleanly.
+    /// Aborts any in-flight file transfers first.
     /// </summary>
     public async Task DisconnectAsync()
     {
@@ -203,6 +240,14 @@ public sealed class WebSocketService : IDisposable
         {
             try
             {
+                // Abort in-flight file transfers
+                foreach (var id in _activeTransferIds)
+                {
+                    var end = new FileEndPayload { Id = id, Sha256 = "" };
+                    await SendFileEndAsync(end);
+                }
+                _activeTransferIds.Clear();
+
                 // Send End message for clean disconnect
                 await SendRawAsync(ProtocolCodec.Encode(MsgType.End), CancellationToken.None);
                 await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);

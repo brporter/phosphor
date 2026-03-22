@@ -31,7 +31,9 @@ public sealed class ApiClient : IDisposable
 
     public async Task<AuthLoginResponse> LoginAsync(string provider, CancellationToken ct = default)
     {
-        var request = new AuthLoginRequest { Provider = provider, Source = "mobile" };
+        // Use "desktop" source to trigger the phosphor:// custom scheme redirect flow.
+        // The relay treats "desktop" same as "mobile" for redirect purposes.
+        var request = new AuthLoginRequest { Provider = provider, Source = "desktop" };
         var json = JsonSerializer.SerializeToUtf8Bytes(request, PhosphorJsonContext.Default.AuthLoginRequest);
         var content = new ByteArrayContent(json);
         content.Headers.ContentType = new("application/json");

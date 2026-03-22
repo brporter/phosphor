@@ -1,3 +1,4 @@
+// Mirrors internal/protocol/messages.go and web/src/lib/protocol.ts — kept manually in sync.
 using System.Text.Json.Serialization;
 
 namespace Phosphor.Models;
@@ -132,6 +133,7 @@ public sealed class FileAckPayload
     [JsonPropertyName("error")]
     public string? Error { get; set; }
 
+    // Go uses int64 with omitempty (zero → omitted); C# nullable maps absent JSON field → null.
     [JsonPropertyName("bytes_written")]
     public long? BytesWritten { get; set; }
 }

@@ -48,9 +48,10 @@ public sealed partial class LoginPage : Page
     private async Task TryConnect()
     {
         var url = RelayUrlBox.Text.Trim();
-        if (!Uri.TryCreate(url, UriKind.Absolute, out _))
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            uri.Scheme is not ("http" or "https"))
         {
-            ErrorBar.Message = "Please enter a valid URL (e.g. https://your-relay.example.com)";
+            ErrorBar.Message = "Please enter a valid URL with http:// or https:// (e.g. https://your-relay.example.com)";
             ErrorBar.IsOpen = true;
             return;
         }
@@ -137,7 +138,9 @@ public sealed partial class LoginPage : Page
 
         try
         {
-            var apiClient = new ApiClient();
+            // Reuse the ViewModel's shared ApiClient (configured with RelayUrl)
+            // rather than creating an unmanaged instance that leaks HttpClient.
+            var apiClient = App.MainWindow.GetApiClient();
             apiClient.Configure(ViewModel.RelayUrl, "");
             var token = await AuthService.AuthenticateAsync(apiClient, provider, XamlRoot);
 

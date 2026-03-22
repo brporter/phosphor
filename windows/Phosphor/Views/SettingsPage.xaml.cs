@@ -22,29 +22,16 @@ public sealed partial class SettingsPage : Page
         EmailText.Text = _viewModel.User?.Email ?? "\u2014";
         IssuerText.Text = _viewModel.User?.Issuer ?? "\u2014";
         RelayUrlBox.Text = _viewModel.RelayUrl;
+
+        // Disable API key generation until relay support is added
+        GenerateKeyButton.IsEnabled = false;
+        GenerateKeyButton.Content = "Generate API Key (coming soon)";
     }
 
-    private async void GenerateKey_Click(object sender, RoutedEventArgs e)
+    private void GenerateKey_Click(object sender, RoutedEventArgs e)
     {
-        try
-        {
-            // POST /api/auth/api-key — requires adding this to ApiClient
-            // For now, show the UI flow; actual API call added during integration
-            GenerateKeyButton.IsEnabled = false;
-            // var response = await _api.GenerateApiKeyAsync();
-            // ApiKeyBox.Text = response.Key;
-            ApiKeyBox.Text = "(API key generation requires relay support)";
-            KeyDisplay.Visibility = Visibility.Visible;
-        }
-        catch (Exception ex)
-        {
-            ApiKeyBox.Text = $"Error: {ex.Message}";
-            KeyDisplay.Visibility = Visibility.Visible;
-        }
-        finally
-        {
-            GenerateKeyButton.IsEnabled = true;
-        }
+        // TODO: Implement when relay adds POST /api/auth/api-key endpoint.
+        // Button is disabled until then — see OnNavigatedTo.
     }
 
     private void CopyKey_Click(object sender, RoutedEventArgs e)

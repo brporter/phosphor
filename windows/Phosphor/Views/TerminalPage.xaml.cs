@@ -12,6 +12,13 @@ public sealed partial class TerminalPage : Page
 {
     private TerminalViewModel? _viewModel;
     private string _sessionId = "";
+    private bool _isSubscribed;
+    private bool _passphraseDialogShowing;
+
+    // Store delegate references for unsubscription
+    private Action<byte[]>? _inputHandler;
+    private Action<int, int>? _sizeHandler;
+    private Action? _readyHandler;
 
     public TerminalPage()
     {
@@ -39,36 +46,56 @@ public sealed partial class TerminalPage : Page
             TerminalControl.SetSize(cols, rows);
         };
 
-        // Wire TerminalControl events back to the ViewModel
-        TerminalControl.InputReceived += async (bytes) =>
+        // Only subscribe to TerminalControl events once
+        if (!_isSubscribed)
         {
-            if (_viewModel is not null)
+            _inputHandler = async (bytes) =>
             {
-                await _viewModel.SendInputAsync(bytes);
-            }
-        };
+                if (_viewModel is not null)
+                {
+                    await _viewModel.SendInputAsync(bytes);
+                }
+            };
 
-        TerminalControl.SizeChanged += async (cols, rows) =>
-        {
-            if (_viewModel is not null)
+            _sizeHandler = async (cols, rows) =>
             {
-                await _viewModel.SendResizeAsync(cols, rows);
-            }
-        };
+                if (_viewModel is not null)
+                {
+                    await _viewModel.SendResizeAsync(cols, rows);
+                }
+            };
 
-        // Connect only after the terminal is initialized and ready
-        TerminalControl.Ready += async () =>
-        {
-            if (_viewModel is not null)
+            _readyHandler = async () =>
             {
-                await _viewModel.ConnectAsync(_sessionId);
-            }
-        };
+                if (_viewModel is not null)
+                {
+                    await _viewModel.ConnectAsync(_sessionId);
+                }
+            };
+
+            TerminalControl.InputReceived += _inputHandler;
+            TerminalControl.TerminalSizeChanged += _sizeHandler;
+            TerminalControl.Ready += _readyHandler;
+            _isSubscribed = true;
+        }
     }
 
     protected override async void OnNavigatedFrom(NavigationEventArgs e)
     {
         base.OnNavigatedFrom(e);
+
+        // Unsubscribe TerminalControl events
+        if (_isSubscribed)
+        {
+            if (_inputHandler is not null)
+                TerminalControl.InputReceived -= _inputHandler;
+            if (_sizeHandler is not null)
+                TerminalControl.TerminalSizeChanged -= _sizeHandler;
+            if (_readyHandler is not null)
+                TerminalControl.Ready -= _readyHandler;
+            _isSubscribed = false;
+        }
+
         if (_viewModel is not null)
         {
             _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
@@ -133,7 +160,7 @@ public sealed partial class TerminalPage : Page
                 break;
 
             case nameof(TerminalViewModel.NeedsPassphrase):
-                if (_viewModel.NeedsPassphrase)
+                if (_viewModel.NeedsPassphrase && !_passphraseDialogShowing)
                     _ = ShowPassphraseDialog();
                 break;
         }
@@ -141,29 +168,39 @@ public sealed partial class TerminalPage : Page
 
     private async Task ShowPassphraseDialog()
     {
-        var input = new PasswordBox { PlaceholderText = "Enter passphrase" };
-        var dialog = new ContentDialog
-        {
-            Title = "Encrypted Session",
-            Content = input,
-            PrimaryButtonText = "Decrypt",
-            CloseButtonText = "Cancel",
-            XamlRoot = XamlRoot,
-        };
+        if (_passphraseDialogShowing) return;
+        _passphraseDialogShowing = true;
 
-        var result = await dialog.ShowAsync();
-        if (result == ContentDialogResult.Primary && _viewModel is not null)
+        try
         {
-            _viewModel.SubmitPassphraseCommand.Execute(input.Password);
-        }
-        else
-        {
-            // User cancelled — disconnect
-            if (_viewModel is not null)
+            var input = new PasswordBox { PlaceholderText = "Enter passphrase" };
+            var dialog = new ContentDialog
             {
-                await _viewModel.DisconnectAsync();
-                if (Frame.CanGoBack) Frame.GoBack();
+                Title = "Encrypted Session",
+                Content = input,
+                PrimaryButtonText = "Decrypt",
+                CloseButtonText = "Cancel",
+                XamlRoot = XamlRoot,
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result == ContentDialogResult.Primary && _viewModel is not null)
+            {
+                _viewModel.SubmitPassphraseCommand.Execute(input.Password);
             }
+            else
+            {
+                // User cancelled — disconnect
+                if (_viewModel is not null)
+                {
+                    await _viewModel.DisconnectAsync();
+                    if (Frame.CanGoBack) Frame.GoBack();
+                }
+            }
+        }
+        finally
+        {
+            _passphraseDialogShowing = false;
         }
     }
 
@@ -179,10 +216,7 @@ public sealed partial class TerminalPage : Page
         var files = await picker.PickMultipleFilesAsync();
         if (files is null || _viewModel is null) return;
 
-        foreach (var file in files)
-        {
-            _ = _viewModel.UploadFileAsync(file.Path);
-        }
+        await UploadFilesAsync(files.Select(f => f.Path));
     }
 
     private void Page_DragOver(object sender, DragEventArgs e)
@@ -207,14 +241,32 @@ public sealed partial class TerminalPage : Page
         if (e.DataView.Contains(StandardDataFormats.StorageItems))
         {
             var items = await e.DataView.GetStorageItemsAsync();
-            foreach (var item in items)
-            {
-                if (item is StorageFile file)
-                {
-                    _ = _viewModel.UploadFileAsync(file.Path);
-                }
-            }
+            var paths = items.OfType<StorageFile>().Select(f => f.Path);
+            await UploadFilesAsync(paths);
         }
+    }
+
+    private async Task UploadFilesAsync(IEnumerable<string> filePaths)
+    {
+        if (_viewModel is null) return;
+
+        // Show transfer panel when uploads start
+        TransferPanel.Visibility = Visibility.Visible;
+
+        var tasks = filePaths.Select(async path =>
+        {
+            try
+            {
+                await _viewModel.UploadFileAsync(path);
+            }
+            catch (Exception ex)
+            {
+                // Surface upload errors to the user instead of swallowing them
+                _viewModel.ErrorMessage = $"Upload failed ({System.IO.Path.GetFileName(path)}): {ex.Message}";
+            }
+        });
+
+        await Task.WhenAll(tasks);
     }
 
     private async void Restart_Click(object sender, RoutedEventArgs e)

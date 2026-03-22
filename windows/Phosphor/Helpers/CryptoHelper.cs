@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 
 namespace Phosphor.Helpers;
 
@@ -11,14 +12,27 @@ public sealed class CryptoHelper : IDisposable
 
     private byte[]? _key;
 
-    public void DeriveKey(string passphrase, byte[] salt)
+    /// <summary>
+    /// Derive key from passphrase chars and salt.
+    /// The caller is responsible for clearing the passphrase char[] after this call.
+    /// </summary>
+    public void DeriveKey(char[] passphrase, byte[] salt)
     {
-        _key = Rfc2898DeriveBytes.Pbkdf2(
-            passphrase,
-            salt,
-            Pbkdf2Iterations,
-            HashAlgorithmName.SHA256,
-            KeySize);
+        // Convert char[] to byte[] so we can zero it after use
+        var passphraseBytes = Encoding.UTF8.GetBytes(passphrase);
+        try
+        {
+            _key = Rfc2898DeriveBytes.Pbkdf2(
+                passphraseBytes,
+                salt,
+                Pbkdf2Iterations,
+                HashAlgorithmName.SHA256,
+                KeySize);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(passphraseBytes);
+        }
     }
 
     public bool HasKey => _key is not null;

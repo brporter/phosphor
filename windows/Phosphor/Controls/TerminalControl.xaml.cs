@@ -6,12 +6,19 @@ using Microsoft.Web.WebView2.Core;
 
 namespace Phosphor.Controls;
 
+/// <summary>
+/// Terminal rendering control using WebView2 + xterm.js.
+/// The design spec lists Microsoft.Terminal.Control (OpenConsole) as the primary renderer,
+/// but it proved too tightly coupled to Windows Terminal internals for embedding.
+/// This WebView2 fallback uses the same xterm.js renderer as the web SPA.
+/// TODO: Revisit OpenConsole integration if Microsoft.Terminal.Control becomes easier to embed.
+/// </summary>
 public sealed partial class TerminalControl : UserControl
 {
     private bool _isReady;
 
     public event Action<byte[]>? InputReceived;
-    public new event Action<int, int>? SizeChanged;
+    public event Action<int, int>? TerminalSizeChanged;
     public event Action? Ready;
 
     public TerminalControl()
@@ -24,20 +31,30 @@ public sealed partial class TerminalControl : UserControl
     {
         await WebView.EnsureCoreWebView2Async();
 
-        // Map a virtual hostname to the app's installed content directory
-        var appDir = AppContext.BaseDirectory;
+        // Map a virtual hostname to only the Controls directory (not the entire app directory)
+        var controlsDir = System.IO.Path.Combine(AppContext.BaseDirectory, "Controls");
         WebView.CoreWebView2.SetVirtualHostNameToFolderMapping(
             "phosphor.local",
-            appDir,
-            CoreWebView2HostResourceAccessKind.Allow);
+            controlsDir,
+            CoreWebView2HostResourceAccessKind.DenyCors);
 
         WebView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
 
         // Suppress default browser context menu
         WebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
 
-        // Navigate to the bundled terminal.html
-        WebView.CoreWebView2.Navigate("https://phosphor.local/Controls/terminal.html");
+        // Block navigation to external URLs
+        WebView.CoreWebView2.NavigationStarting += (_, args) =>
+        {
+            var uri = new Uri(args.Uri);
+            if (uri.Host != "phosphor.local")
+            {
+                args.Cancel = true;
+            }
+        };
+
+        // Navigate to the bundled terminal.html served from the Controls/ virtual host
+        WebView.CoreWebView2.Navigate("https://phosphor.local/terminal.html");
     }
 
     private void CoreWebView2_WebMessageReceived(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs args)
@@ -65,7 +82,7 @@ public sealed partial class TerminalControl : UserControl
             {
                 var cols = root.GetProperty("cols").GetInt32();
                 var rows = root.GetProperty("rows").GetInt32();
-                SizeChanged?.Invoke(cols, rows);
+                TerminalSizeChanged?.Invoke(cols, rows);
                 break;
             }
             case "ready":
