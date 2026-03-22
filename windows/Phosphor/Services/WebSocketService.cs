@@ -28,8 +28,10 @@ public sealed class WebSocketService : IDisposable
     public Action? OnEnd { get; set; }
     public Action<Exception>? OnDisconnected { get; set; }
 
-    // Track active file transfer IDs for cleanup on disconnect
+    // Track active file transfer IDs for cleanup on disconnect.
+    // Accessed from both the receive loop and UI thread — guarded by _transferLock.
     private readonly HashSet<string> _activeTransferIds = [];
+    private readonly object _transferLock = new();
 
     /// <summary>
     /// Connect to a session and start the receive loop.
@@ -79,7 +81,9 @@ public sealed class WebSocketService : IDisposable
                         // Buffer full but message not complete — grow or reject
                         if (buffer.Length >= MaxMessageSize)
                         {
-                            // Message exceeds hard limit — skip it and close
+                            // Message exceeds hard limit — abort socket and stop loops
+                            _cts?.Cancel();
+                            _ws?.Abort();
                             OnDisconnected?.Invoke(
                                 new InvalidOperationException($"Message exceeded {MaxMessageSize} byte limit"));
                             return;
@@ -136,7 +140,12 @@ public sealed class WebSocketService : IDisposable
                     case MsgType.FileAck:
                         var ack = ProtocolCodec.DecodeJson(payload, PhosphorJsonContext.Default.FileAckPayload);
                         if (ack.Status is "complete" or "error")
-                            _activeTransferIds.Remove(ack.Id);
+                        {
+                            lock (_transferLock)
+                            {
+                                _activeTransferIds.Remove(ack.Id);
+                            }
+                        }
                         OnFileAck?.Invoke(ack);
                         break;
                     case MsgType.End:
@@ -189,7 +198,10 @@ public sealed class WebSocketService : IDisposable
 
     public async Task SendFileStartAsync(FileStartPayload start, CancellationToken ct = default)
     {
-        _activeTransferIds.Add(start.Id);
+        lock (_transferLock)
+        {
+            _activeTransferIds.Add(start.Id);
+        }
         var msg = ProtocolCodec.EncodeJson(MsgType.FileStart, start, PhosphorJsonContext.Default.FileStartPayload);
         await SendRawAsync(msg, ct);
     }
@@ -232,7 +244,9 @@ public sealed class WebSocketService : IDisposable
 
     /// <summary>
     /// Send End message and close the WebSocket cleanly.
-    /// Aborts any in-flight file transfers first.
+    /// Aborts any in-flight file transfers first by sending FileEnd with empty SHA256.
+    /// The CLI will respond with an error FileAck — this is intentional as there is no
+    /// dedicated FileCancel message type in the protocol.
     /// </summary>
     public async Task DisconnectAsync()
     {
@@ -240,13 +254,21 @@ public sealed class WebSocketService : IDisposable
         {
             try
             {
+                // Snapshot and clear active transfers under lock to avoid
+                // concurrent modification from the receive loop
+                string[] transferIds;
+                lock (_transferLock)
+                {
+                    transferIds = [.. _activeTransferIds];
+                    _activeTransferIds.Clear();
+                }
+
                 // Abort in-flight file transfers
-                foreach (var id in _activeTransferIds)
+                foreach (var id in transferIds)
                 {
                     var end = new FileEndPayload { Id = id, Sha256 = "" };
                     await SendFileEndAsync(end);
                 }
-                _activeTransferIds.Clear();
 
                 // Send End message for clean disconnect
                 await SendRawAsync(ProtocolCodec.Encode(MsgType.End), CancellationToken.None);

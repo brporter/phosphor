@@ -39,7 +39,15 @@ public sealed partial class AuthViewModel : ObservableObject
     public void TryRestoreSession(string relayUrl)
     {
         RelayUrl = relayUrl;
-        var host = new Uri(relayUrl).Host;
+
+        if (!Uri.TryCreate(relayUrl, UriKind.Absolute, out var uri))
+        {
+            // Malformed stored URL — clear it and bail
+            Windows.Storage.ApplicationData.Current.LocalSettings.Values.Remove("relay_url");
+            return;
+        }
+
+        var host = uri.Host;
         var cred = _credentials.Load(host);
         if (cred is null) return;
 

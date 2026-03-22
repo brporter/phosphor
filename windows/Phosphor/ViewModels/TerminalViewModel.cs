@@ -343,55 +343,78 @@ public sealed partial class TerminalViewModel : ObservableObject, IDisposable
         var transferObj = new FileTransfer(id, fileInfo.Name, fileInfo.Length);
         Transfers.Add(transferObj);
 
-        // Send FileStart
-        await _ws.SendFileStartAsync(new FileStartPayload
-        {
-            Id = id,
-            Name = fileInfo.Name,
-            Size = fileInfo.Length,
-        }, ct);
-
-        transferObj.Status = "pending";
-
-        // Wait for FileAck "accepted" (30s timeout)
+        // Subscribe to ack events BEFORE sending FileStart to avoid missing a fast response.
+        // This handler covers both the "accepted" ack and the final "complete"/"error" ack.
         var acceptTcs = new TaskCompletionSource<bool>();
+        var completeTcs = new TaskCompletionSource<FileAckPayload>();
         void OnAck(FileAckPayload ack)
         {
-            if (ack.Id == id && ack.Status == "accepted")
+            if (ack.Id != id) return;
+            if (ack.Status == "accepted")
                 acceptTcs.TrySetResult(true);
-            else if (ack.Id == id && ack.Status == "error")
+            else if (ack.Status == "error")
+            {
                 acceptTcs.TrySetException(new InvalidOperationException(ack.Error ?? "Upload rejected"));
+                completeTcs.TrySetResult(ack);
+            }
+            else if (ack.Status == "complete")
+                completeTcs.TrySetResult(ack);
         }
         _ws.OnFileAck += OnAck;
+
         try
         {
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
-            timeoutCts.Token.Register(() => acceptTcs.TrySetCanceled());
-            await acceptTcs.Task;
+            // Send FileStart
+            await _ws.SendFileStartAsync(new FileStartPayload
+            {
+                Id = id,
+                Name = fileInfo.Name,
+                Size = fileInfo.Length,
+            }, ct);
+
+            transferObj.Status = "pending";
+
+            // Wait for FileAck "accepted" (30s timeout)
+            using (var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
+                timeoutCts.Token.Register(() => acceptTcs.TrySetCanceled());
+                await acceptTcs.Task;
+            }
+
+            // Stream chunks off the UI thread to avoid jank during large uploads
+            await Task.Run(async () =>
+            {
+                const int chunkSize = 32 * 1024;
+                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                await using var stream = File.OpenRead(filePath);
+                var buffer = new byte[chunkSize];
+
+                int bytesRead;
+                while ((bytesRead = await stream.ReadAsync(buffer.AsMemory(0, chunkSize), ct)) > 0)
+                {
+                    var chunk = buffer.AsMemory(0, bytesRead);
+                    hash.AppendData(chunk.Span);
+                    await _ws.SendFileChunkAsync(id, chunk, ct);
+                }
+
+                // Send FileEnd with SHA256
+                var sha256 = Convert.ToHexStringLower(hash.GetHashAndReset());
+                await _ws.SendFileEndAsync(new FileEndPayload { Id = id, Sha256 = sha256 }, ct);
+            }, ct);
+
+            // Wait for the final complete/error FileAck (30s timeout)
+            using (var finalCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                finalCts.CancelAfter(TimeSpan.FromSeconds(30));
+                finalCts.Token.Register(() => completeTcs.TrySetCanceled());
+                await completeTcs.Task;
+            }
         }
         finally
         {
             _ws.OnFileAck -= OnAck;
         }
-
-        // Stream chunks
-        const int chunkSize = 32 * 1024;
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        await using var stream = File.OpenRead(filePath);
-        var buffer = new byte[chunkSize];
-
-        int bytesRead;
-        while ((bytesRead = await stream.ReadAsync(buffer.AsMemory(0, chunkSize), ct)) > 0)
-        {
-            var chunk = buffer.AsMemory(0, bytesRead);
-            hash.AppendData(chunk.Span);
-            await _ws.SendFileChunkAsync(id, chunk, ct);
-        }
-
-        // Send FileEnd with SHA256
-        var sha256 = Convert.ToHexStringLower(hash.GetHashAndReset());
-        await _ws.SendFileEndAsync(new FileEndPayload { Id = id, Sha256 = sha256 }, ct);
     }
 
     private static string GenerateTransferId()

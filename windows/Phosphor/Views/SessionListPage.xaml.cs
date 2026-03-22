@@ -33,7 +33,7 @@ public sealed partial class SessionListPage : Page
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
         base.OnNavigatedFrom(e);
-        _viewModel?.StopPolling();
+        _viewModel?.Dispose();
     }
 
     private void SessionList_ItemClick(object sender, ItemClickEventArgs e)

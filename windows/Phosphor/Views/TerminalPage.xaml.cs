@@ -99,7 +99,14 @@ public sealed partial class TerminalPage : Page
         if (_viewModel is not null)
         {
             _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
-            await _viewModel.DisconnectAsync();
+            try
+            {
+                await _viewModel.DisconnectAsync();
+            }
+            catch (Exception)
+            {
+                // Swallow errors during navigation cleanup to prevent crashes from async void
+            }
             _viewModel.Dispose();
         }
     }
