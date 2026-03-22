@@ -84,6 +84,11 @@
             </StackPanel>
         </Border>
 
+        <!-- Error bar for upload failures and general errors -->
+        <InfoBar x:Name="ErrorBar" Grid.Row="1" IsOpen="False"
+                 Severity="Error" VerticalAlignment="Top"
+                 IsClosable="True" />
+
         <!-- Upload progress -->
         <StackPanel x:Name="TransferPanel" Grid.Row="2"
                     Background="{StaticResource CardBackgroundBrush}"

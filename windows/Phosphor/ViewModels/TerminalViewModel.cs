@@ -276,7 +276,17 @@ public sealed partial class TerminalViewModel : ObservableObject, IDisposable
 
     public void DeriveKey(char[] passphrase, string saltBase64)
     {
-        var salt = Convert.FromBase64String(saltBase64);
+        byte[] salt;
+        try
+        {
+            salt = Convert.FromBase64String(saltBase64);
+        }
+        catch (FormatException)
+        {
+            ErrorMessage = "Invalid encryption salt from relay — cannot decrypt session.";
+            NeedsPassphrase = false;
+            return;
+        }
         _crypto?.DeriveKey(passphrase, salt);
     }
 

@@ -16,10 +16,12 @@ namespace Phosphor.Controls;
 public sealed partial class TerminalControl : UserControl
 {
     private bool _isReady;
+    private bool _isInitializing;
 
     public event Action<byte[]>? InputReceived;
     public event Action<int, int>? TerminalSizeChanged;
     public event Action? Ready;
+    public event Action<string>? InitializationFailed;
 
     public TerminalControl()
     {
@@ -29,32 +31,45 @@ public sealed partial class TerminalControl : UserControl
 
     private async void TerminalControl_Loaded(object sender, RoutedEventArgs e)
     {
-        await WebView.EnsureCoreWebView2Async();
+        // Guard against re-entrance if Loaded fires multiple times
+        if (_isInitializing || _isReady) return;
+        _isInitializing = true;
 
-        // Map a virtual hostname to only the Controls directory (not the entire app directory)
-        var controlsDir = System.IO.Path.Combine(AppContext.BaseDirectory, "Controls");
-        WebView.CoreWebView2.SetVirtualHostNameToFolderMapping(
-            "phosphor.local",
-            controlsDir,
-            CoreWebView2HostResourceAccessKind.DenyCors);
-
-        WebView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
-
-        // Suppress default browser context menu
-        WebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
-
-        // Block navigation to external URLs
-        WebView.CoreWebView2.NavigationStarting += (_, args) =>
+        try
         {
-            var uri = new Uri(args.Uri);
-            if (uri.Host != "phosphor.local")
-            {
-                args.Cancel = true;
-            }
-        };
+            await WebView.EnsureCoreWebView2Async();
 
-        // Navigate to the bundled terminal.html served from the Controls/ virtual host
-        WebView.CoreWebView2.Navigate("https://phosphor.local/terminal.html");
+            // Map a virtual hostname to only the Controls directory (not the entire app directory)
+            var controlsDir = System.IO.Path.Combine(AppContext.BaseDirectory, "Controls");
+            WebView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                "phosphor.local",
+                controlsDir,
+                CoreWebView2HostResourceAccessKind.DenyCors);
+
+            WebView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
+
+            // Suppress default browser context menu
+            WebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+
+            // Block navigation to external URLs
+            WebView.CoreWebView2.NavigationStarting += (_, args) =>
+            {
+                var uri = new Uri(args.Uri);
+                if (uri.Host != "phosphor.local")
+                {
+                    args.Cancel = true;
+                }
+            };
+
+            // Navigate to the bundled terminal.html served from the Controls/ virtual host
+            WebView.CoreWebView2.Navigate("https://phosphor.local/terminal.html");
+        }
+        catch (Exception ex)
+        {
+            _isInitializing = false;
+            InitializationFailed?.Invoke(
+                $"Terminal failed to initialize: {ex.Message}. Is the WebView2 runtime installed?");
+        }
     }
 
     private void CoreWebView2_WebMessageReceived(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs args)

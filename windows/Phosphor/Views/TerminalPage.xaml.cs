@@ -19,6 +19,7 @@ public sealed partial class TerminalPage : Page
     private Action<byte[]>? _inputHandler;
     private Action<int, int>? _sizeHandler;
     private Action? _readyHandler;
+    private Action<string>? _initFailedHandler;
 
     public TerminalPage()
     {
@@ -46,36 +47,59 @@ public sealed partial class TerminalPage : Page
             TerminalControl.SetSize(cols, rows);
         };
 
-        // Only subscribe to TerminalControl events once
+        // Only subscribe to TerminalControl events once.
+        // All async handlers wrapped in try/catch to avoid unobserved exceptions
+        // from async void (Action delegate can't return Task).
         if (!_isSubscribed)
         {
             _inputHandler = async (bytes) =>
             {
-                if (_viewModel is not null)
+                try
                 {
-                    await _viewModel.SendInputAsync(bytes);
+                    if (_viewModel is not null)
+                        await _viewModel.SendInputAsync(bytes);
+                }
+                catch (Exception ex)
+                {
+                    ShowError($"Input error: {ex.Message}");
                 }
             };
 
             _sizeHandler = async (cols, rows) =>
             {
-                if (_viewModel is not null)
+                try
                 {
-                    await _viewModel.SendResizeAsync(cols, rows);
+                    if (_viewModel is not null)
+                        await _viewModel.SendResizeAsync(cols, rows);
+                }
+                catch (Exception)
+                {
+                    // Resize failures are non-critical — silently ignore
                 }
             };
 
             _readyHandler = async () =>
             {
-                if (_viewModel is not null)
+                try
                 {
-                    await _viewModel.ConnectAsync(_sessionId);
+                    if (_viewModel is not null)
+                        await _viewModel.ConnectAsync(_sessionId);
                 }
+                catch (Exception ex)
+                {
+                    ShowError($"Connection failed: {ex.Message}");
+                }
+            };
+
+            _initFailedHandler = (message) =>
+            {
+                ShowError(message);
             };
 
             TerminalControl.InputReceived += _inputHandler;
             TerminalControl.TerminalSizeChanged += _sizeHandler;
             TerminalControl.Ready += _readyHandler;
+            TerminalControl.InitializationFailed += _initFailedHandler;
             _isSubscribed = true;
         }
     }
@@ -93,6 +117,8 @@ public sealed partial class TerminalPage : Page
                 TerminalControl.TerminalSizeChanged -= _sizeHandler;
             if (_readyHandler is not null)
                 TerminalControl.Ready -= _readyHandler;
+            if (_initFailedHandler is not null)
+                TerminalControl.InitializationFailed -= _initFailedHandler;
             _isSubscribed = false;
         }
 
@@ -114,6 +140,18 @@ public sealed partial class TerminalPage : Page
     private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         DispatcherQueue.TryEnqueue(() => UpdateUI(e.PropertyName));
+    }
+
+    /// <summary>
+    /// Show a transient error message via the ErrorBar InfoBar.
+    /// </summary>
+    private void ShowError(string message)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            ErrorBar.Message = message;
+            ErrorBar.IsOpen = true;
+        });
     }
 
     private void UpdateUI(string? property)
@@ -169,6 +207,12 @@ public sealed partial class TerminalPage : Page
             case nameof(TerminalViewModel.NeedsPassphrase):
                 if (_viewModel.NeedsPassphrase && !_passphraseDialogShowing)
                     _ = ShowPassphraseDialog();
+                break;
+
+            case nameof(TerminalViewModel.ErrorMessage):
+                // Surface upload and general errors not tied to ConnectionState
+                if (_viewModel.ErrorMessage is not null && _viewModel.ConnectionState != "error")
+                    ShowError(_viewModel.ErrorMessage);
                 break;
         }
     }
@@ -268,8 +312,7 @@ public sealed partial class TerminalPage : Page
             }
             catch (Exception ex)
             {
-                // Surface upload errors to the user instead of swallowing them
-                _viewModel.ErrorMessage = $"Upload failed ({System.IO.Path.GetFileName(path)}): {ex.Message}";
+                ShowError($"Upload failed ({System.IO.Path.GetFileName(path)}): {ex.Message}");
             }
         });
 

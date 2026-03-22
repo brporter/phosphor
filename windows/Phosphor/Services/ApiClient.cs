@@ -14,7 +14,15 @@ public sealed class ApiClient : IDisposable
     {
         _baseUrl = baseUrl.TrimEnd('/');
         _token = token;
-        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        if (!string.IsNullOrEmpty(token))
+        {
+            _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+        else
+        {
+            _http.DefaultRequestHeaders.Authorization = null;
+        }
     }
 
     public string BaseUrl => _baseUrl;
