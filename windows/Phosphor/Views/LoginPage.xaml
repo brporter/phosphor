@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Phosphor.Views.LoginPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:Phosphor.ViewModels">
+
+    <Grid HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="500" Padding="32">
+        <StackPanel Spacing="24">
+            <!-- ASCII Logo (scales dynamically via Viewbox) -->
+            <StackPanel HorizontalAlignment="Center" Spacing="12">
+                <Viewbox MaxHeight="80" Stretch="Uniform" HorizontalAlignment="Center">
+                    <TextBlock
+                        FontFamily="Cascadia Mono, Consolas"
+                        FontSize="14"
+                        LineHeight="16"
+                        Foreground="{StaticResource PhosphorGreenBrush}"
+                        IsTextSelectionEnabled="False"
+                        TextAlignment="Left"
+                        xml:space="preserve"> ██████╗ ██╗  ██╗ ██████╗ ███████╗██████╗ ██╗  ██╗ ██████╗ ██████╗
+ ██╔══██╗██║  ██║██╔═══██╗██╔════╝██╔══██╗██║  ██║██╔═══██╗██╔══██╗
+ ██████╔╝███████║██║   ██║███████╗██████╔╝███████║██║   ██║██████╔╝
+ ██╔═══╝ ██╔══██║██║   ██║╚════██║██╔═══╝ ██╔══██║██║   ██║██╔══██╗
+ ██║     ██║  ██║╚██████╔╝███████║██║     ██║  ██║╚██████╔╝██║  ██║
+ ╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝</TextBlock>
+                </Viewbox>
+                <TextBlock Text="// REAL-TIME TERMINAL VIEWER" FontSize="12"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           HorizontalAlignment="Center"
+                           FontFamily="{StaticResource TerminalFontFamily}" />
+            </StackPanel>
+
+            <!-- Relay URL -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="Relay Server" FontSize="12"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="RelayUrlBox"
+                             PlaceholderText="https://your-relay.example.com"
+                             Grid.Column="0"
+                             KeyDown="RelayUrlBox_KeyDown" />
+                    <Button x:Name="ConnectButton"
+                            Content="Connect"
+                            Grid.Column="1"
+                            Click="ConnectButton_Click"
+                            Style="{StaticResource AccentButtonStyle}" />
+                </Grid>
+                <TextBlock x:Name="RelayHint"
+                           Text="Enter your Phosphor relay URL to get started"
+                           FontSize="11"
+                           Foreground="{StaticResource PhosphorAmberBrush}" />
+            </StackPanel>
+
+            <!-- Error message -->
+            <InfoBar x:Name="ErrorBar" IsOpen="False" Severity="Error" IsClosable="True" />
+
+            <!-- Provider buttons (hidden until relay is connected) -->
+            <StackPanel x:Name="ProviderButtons" Spacing="8" Visibility="Collapsed" />
+
+            <ProgressRing x:Name="LoadingRing" IsActive="False"
+                          HorizontalAlignment="Center" Width="32" Height="32" />
+        </StackPanel>
+    </Grid>
+</Page>
