@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Phosphor.Views.TerminalPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Phosphor.Controls"
+    AllowDrop="True"
+    DragOver="Page_DragOver"
+    DragLeave="Page_DragLeave"
+    Drop="Page_Drop">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Status bar -->
+        <Border Grid.Row="0" Background="{StaticResource CardBackgroundBrush}"
+                BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="0,0,0,1"
+                Padding="12,8">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <!-- Connection indicator -->
+                <Ellipse x:Name="StatusDot" Width="8" Height="8"
+                         Fill="{StaticResource PhosphorGreenBrush}" VerticalAlignment="Center" />
+
+                <TextBlock x:Name="StatusText" Text="Connecting..."
+                           FontSize="12" VerticalAlignment="Center" />
+
+                <TextBlock x:Name="CommandText" FontSize="12"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           VerticalAlignment="Center" />
+
+                <!-- Spacer -->
+                <Border Width="1" />
+
+                <!-- Viewer count -->
+                <TextBlock x:Name="ViewerCountText" FontSize="12"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           VerticalAlignment="Center" />
+
+                <!-- Encrypted badge -->
+                <Border x:Name="EncryptedBadge" Visibility="Collapsed"
+                        Style="{StaticResource BadgeEncrypted}">
+                    <TextBlock Text="&#x1F512; E2E" FontSize="10"
+                               Foreground="{StaticResource PhosphorCyanBrush}" />
+                </Border>
+
+                <!-- Upload button -->
+                <Button x:Name="UploadButton" Content="&#x1F4C1; Upload"
+                        Click="Upload_Click" FontSize="11"
+                        VerticalAlignment="Center" Visibility="Collapsed" />
+            </StackPanel>
+        </Border>
+
+        <!-- Terminal area -->
+        <Grid Grid.Row="1" Background="{StaticResource PhosphorTerminalBgBrush}">
+            <controls:TerminalControl x:Name="TerminalControl" />
+            <TextBlock x:Name="PlaceholderText" Text="Connecting to terminal..."
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{StaticResource PhosphorGreenBrush}"
+                       FontFamily="{StaticResource TerminalFontFamily}" />
+        </Grid>
+
+        <!-- Drag overlay -->
+        <Border x:Name="DragOverlay" Grid.Row="1" Visibility="Collapsed"
+                Background="#80050808">
+            <TextBlock Text="Drop file to upload" FontSize="18"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{StaticResource PhosphorGreenBrush}" />
+        </Border>
+
+        <!-- Process exit overlay -->
+        <Border x:Name="ExitOverlay" Grid.Row="1" Visibility="Collapsed"
+                Background="#80050808" HorizontalAlignment="Center" VerticalAlignment="Center"
+                CornerRadius="8" Padding="24,16">
+            <StackPanel Spacing="12" HorizontalAlignment="Center">
+                <TextBlock x:Name="ExitCodeText" FontSize="14"
+                           HorizontalAlignment="Center" />
+                <Button x:Name="RestartButton" Content="Restart"
+                        Click="Restart_Click" HorizontalAlignment="Center"
+                        Style="{StaticResource AccentButtonStyle}" />
+            </StackPanel>
+        </Border>
+
+        <!-- Error bar for upload failures and general errors -->
+        <InfoBar x:Name="ErrorBar" Grid.Row="1" IsOpen="False"
+                 Severity="Error" VerticalAlignment="Top"
+                 IsClosable="True" />
+
+        <!-- Upload progress -->
+        <StackPanel x:Name="TransferPanel" Grid.Row="2"
+                    Background="{StaticResource CardBackgroundBrush}"
+                    Visibility="Collapsed" Padding="12,8">
+            <TextBlock Text="Uploads" FontSize="11"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Margin="0,0,0,4" />
+        </StackPanel>
+
+        <!-- Passphrase dialog is shown as ContentDialog, not inline -->
+    </Grid>
+</Page>

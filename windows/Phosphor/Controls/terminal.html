@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Phosphor Terminal</title>
+    <link rel="stylesheet" href="https://phosphor.local/lib/xterm.css" />
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #050808;
+            height: 100%;
+            width: 100%;
+        }
+        #terminal {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="terminal"></div>
+
+    <script src="https://phosphor.local/lib/xterm.js"></script>
+    <script src="https://phosphor.local/lib/addon-fit.js"></script>
+    <script src="https://phosphor.local/lib/addon-webgl.js"></script>
+    <script>
+        (function () {
+            "use strict";
+
+            const term = new Terminal({
+                cursorBlink: true,
+                fontFamily: '"Fira Code", "Cascadia Code", monospace',
+                fontSize: 14,
+                theme: {
+                    background: "#050808",
+                    foreground: "#b0b0b0",
+                    cursor: "#00ff41",
+                    cursorAccent: "#050808",
+                    selectionBackground: "rgba(0, 255, 65, 0.2)",
+                    black: "#0a0a0a",
+                    red: "#ff3333",
+                    green: "#00ff41",
+                    yellow: "#ffb000",
+                    blue: "#0088ff",
+                    magenta: "#cc00ff",
+                    cyan: "#00e5ff",
+                    white: "#b0b0b0",
+                    brightBlack: "#555555",
+                    brightRed: "#ff6666",
+                    brightGreen: "#66ff66",
+                    brightYellow: "#ffcc33",
+                    brightBlue: "#3399ff",
+                    brightMagenta: "#dd66ff",
+                    brightCyan: "#66ffff",
+                    brightWhite: "#ffffff",
+                },
+            });
+
+            const fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+
+            const container = document.getElementById("terminal");
+            term.open(container);
+
+            // Try WebGL addon, fall back to canvas
+            try {
+                const webglAddon = new WebglAddon.WebglAddon();
+                webglAddon.onContextLoss(() => {
+                    webglAddon.dispose();
+                });
+                term.loadAddon(webglAddon);
+            } catch (e) {
+                console.warn("WebGL addon failed, using canvas renderer:", e);
+            }
+
+            fitAddon.fit();
+
+            // Send resize after fit
+            function sendResize() {
+                fitAddon.fit();
+                if (window.chrome && window.chrome.webview) {
+                    window.chrome.webview.postMessage({
+                        type: "resize",
+                        cols: term.cols,
+                        rows: term.rows,
+                    });
+                }
+            }
+
+            // ResizeObserver to auto-fit on container resize
+            const resizeObserver = new ResizeObserver(() => {
+                sendResize();
+            });
+            resizeObserver.observe(container);
+
+            // Handle keyboard input: convert string to UTF-8 byte array
+            term.onData((data) => {
+                if (window.chrome && window.chrome.webview) {
+                    const encoder = new TextEncoder();
+                    const bytes = Array.from(encoder.encode(data));
+                    window.chrome.webview.postMessage({
+                        type: "input",
+                        data: bytes,
+                    });
+                }
+            });
+
+            // Listen for messages from C# host
+            if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.addEventListener("message", (event) => {
+                    const msg = event.data;
+                    switch (msg.type) {
+                        case "write": {
+                            // Decode base64 data and write to terminal
+                            const binary = atob(msg.data);
+                            const bytes = new Uint8Array(binary.length);
+                            for (let i = 0; i < binary.length; i++) {
+                                bytes[i] = binary.charCodeAt(i);
+                            }
+                            term.write(bytes);
+                            break;
+                        }
+                        case "resize":
+                            term.resize(msg.cols, msg.rows);
+                            break;
+                        case "clear":
+                            term.clear();
+                            break;
+                    }
+                });
+
+                // Signal that terminal is ready
+                window.chrome.webview.postMessage({ type: "ready" });
+            }
+        })();
+    </script>
+</body>
+</html>

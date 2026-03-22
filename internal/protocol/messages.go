@@ -1,6 +1,7 @@
 package protocol
 
 // Message type bytes.
+// Mirrored in web/src/lib/protocol.ts and windows/Phosphor/Models/ProtocolMessages.cs — kept manually in sync.
 const (
 	TypeStdout      byte = 0x01
 	TypeStdin       byte = 0x02

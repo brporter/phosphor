@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Phosphor.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer Padding="24">
+        <StackPanel Spacing="24" MaxWidth="600">
+            <TextBlock Text="Settings" FontSize="28" FontWeight="SemiBold" />
+
+            <!-- Account -->
+            <StackPanel Spacing="8">
+                <TextBlock Text="Account" FontSize="18" FontWeight="SemiBold" />
+                <Border Background="{StaticResource CardBackgroundBrush}"
+                        BorderBrush="{StaticResource CardBorderBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="16,12">
+                    <StackPanel Spacing="8">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Email:" FontSize="13" FontWeight="SemiBold" />
+                            <TextBlock x:Name="EmailText" FontSize="13" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Issuer:" FontSize="13" FontWeight="SemiBold" />
+                            <TextBlock x:Name="IssuerText" FontSize="13"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Relay URL -->
+            <StackPanel Spacing="8">
+                <TextBlock Text="Relay" FontSize="18" FontWeight="SemiBold" />
+                <Border Background="{StaticResource CardBackgroundBrush}"
+                        BorderBrush="{StaticResource CardBorderBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="16,12">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Relay URL" FontSize="12"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBox x:Name="RelayUrlBox" IsReadOnly="True" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- API Key -->
+            <StackPanel Spacing="8">
+                <TextBlock Text="API Key" FontSize="18" FontWeight="SemiBold" />
+                <Border Background="{StaticResource CardBackgroundBrush}"
+                        BorderBrush="{StaticResource CardBorderBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="16,12">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Generate an API key for CLI daemon authentication."
+                                   FontSize="13"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <Button x:Name="GenerateKeyButton" Content="Generate API Key"
+                                Click="GenerateKey_Click"
+                                Style="{StaticResource AccentButtonStyle}" />
+                        <StackPanel x:Name="KeyDisplay" Visibility="Collapsed" Spacing="4">
+                            <TextBlock Text="Copy this key — it won't be shown again:"
+                                       FontSize="12" Foreground="{StaticResource PhosphorAmberBrush}" />
+                            <TextBox x:Name="ApiKeyBox" IsReadOnly="True"
+                                     FontFamily="{StaticResource TerminalFontFamily}" FontSize="13" />
+                            <Button Content="Copy" Click="CopyKey_Click" FontSize="11" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Sign out -->
+            <Button x:Name="SignOutButton" Content="Sign Out"
+                    Click="SignOut_Click" />
+
+            <!-- Version -->
+            <TextBlock Text="Phosphor for Windows v0.1.0" FontSize="11"
+                       Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>
