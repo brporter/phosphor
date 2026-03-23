@@ -65,7 +65,9 @@ final class SessionListViewModel {
                 baseURL: relayURL,
                 token: token
             )
-            sessions = fetched
+            if sessions != fetched {
+                sessions = fetched
+            }
             error = nil
         } catch {
             self.error = error.localizedDescription

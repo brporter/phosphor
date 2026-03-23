@@ -24,15 +24,28 @@ struct TerminalContainerView: View {
                 // Terminal
                 switch viewModel.connectionState {
                 case .connecting:
-                    Spacer()
-                    VStack(spacing: 12) {
-                        ProgressView()
-                            .tint(PhosphorTheme.green)
-                        Text("Connecting...")
-                            .font(.system(size: 14, design: .monospaced))
-                            .foregroundStyle(PhosphorTheme.text)
+                    switch viewModel.encryptionState {
+                    case .passphraseRequired(let salt):
+                        PassphraseView(salt: salt, isFailed: false) { passphrase in
+                            viewModel.submitPassphrase(passphrase, salt: salt)
+                        }
+
+                    case .failed(let salt):
+                        PassphraseView(salt: salt, isFailed: true) { passphrase in
+                            viewModel.submitPassphrase(passphrase, salt: salt)
+                        }
+
+                    default:
+                        Spacer()
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .tint(PhosphorTheme.green)
+                            Text("Connecting...")
+                                .font(.system(size: 14, design: .monospaced))
+                                .foregroundStyle(PhosphorTheme.text)
+                        }
+                        Spacer()
                     }
-                    Spacer()
 
                 case .error:
                     Spacer()
@@ -61,8 +74,21 @@ struct TerminalContainerView: View {
                     Spacer()
 
                 default:
-                    TerminalRepresentable(viewModel: viewModel)
-                        .ignoresSafeArea(.keyboard, edges: .bottom)
+                    switch viewModel.encryptionState {
+                    case .passphraseRequired(let salt):
+                        PassphraseView(salt: salt, isFailed: false) { passphrase in
+                            viewModel.submitPassphrase(passphrase, salt: salt)
+                        }
+
+                    case .failed(let salt):
+                        PassphraseView(salt: salt, isFailed: true) { passphrase in
+                            viewModel.submitPassphrase(passphrase, salt: salt)
+                        }
+
+                    default:
+                        TerminalRepresentable(viewModel: viewModel)
+                            .ignoresSafeArea(.keyboard, edges: .bottom)
+                    }
                 }
             }
         }
@@ -119,6 +145,12 @@ struct TerminalContainerView: View {
                     .padding(.vertical, 2)
                     .background(PhosphorTheme.amber)
                     .clipShape(RoundedRectangle(cornerRadius: 3))
+
+                if viewModel.joinedInfo?.encrypted == true {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(PhosphorTheme.green)
+                }
 
                 if viewModel.isPipeMode {
                     Text("VIEW ONLY")
