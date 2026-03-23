@@ -3,6 +3,7 @@ import SwiftUI
 struct SessionListView: View {
     let viewModel: SessionListViewModel
     let auth: AuthViewModel
+    @Binding var selectedSessionId: String?
     @State private var showSettings = false
     @State private var sessionToDestroy: SessionData?
 
@@ -77,24 +78,43 @@ struct SessionListView: View {
     }
 
     private var sessionList: some View {
-        List {
+        List(selection: $selectedSessionId) {
             ForEach(viewModel.sessions) { session in
-                NavigationLink(value: session.id) {
-                    SessionCardView(session: session)
-                }
-                .listRowBackground(PhosphorTheme.background)
-                .listRowSeparator(.hidden)
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    Button(role: .destructive) {
-                        sessionToDestroy = session
-                    } label: {
-                        Label("Destroy", systemImage: "trash")
-                    }
-                }
+                sessionRow(session)
             }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+    }
+
+    @ViewBuilder
+    private func sessionRow(_ session: SessionData) -> some View {
+        #if os(macOS)
+        SessionCardView(session: session)
+            .tag(session.id)
+            .listRowBackground(PhosphorTheme.background)
+            .listRowSeparator(.hidden)
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button(role: .destructive) {
+                    sessionToDestroy = session
+                } label: {
+                    Label("Destroy", systemImage: "trash")
+                }
+            }
+        #else
+        NavigationLink(value: session.id) {
+            SessionCardView(session: session)
+        }
+        .listRowBackground(PhosphorTheme.background)
+        .listRowSeparator(.hidden)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) {
+                sessionToDestroy = session
+            } label: {
+                Label("Destroy", systemImage: "trash")
+            }
+        }
+        #endif
     }
 
     private var emptyState: some View {

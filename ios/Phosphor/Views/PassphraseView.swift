@@ -77,6 +77,7 @@ struct PassphraseView: View {
         guard !passphrase.isEmpty else { return }
         let submitted = passphrase
         passphrase = ""
+        isFocused = true
         onSubmit(submitted)
     }
 }

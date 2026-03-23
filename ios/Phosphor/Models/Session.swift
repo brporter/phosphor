@@ -1,6 +1,6 @@
 import Foundation
 
-struct SessionData: Codable, Identifiable {
+struct SessionData: Codable, Identifiable, Equatable, Hashable {
     let id: String
     let mode: String
     let cols: Int

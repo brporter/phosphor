@@ -40,11 +40,22 @@ struct TerminalRepresentable: UIViewRepresentable {
         return termView
     }
 
-    func updateUIView(_ uiView: SwiftTerm.TerminalView, context: Context) {}
+    func updateUIView(_ uiView: SwiftTerm.TerminalView, context: Context) {
+        // Send initial terminal size and grab focus once the view has been laid out
+        if !context.coordinator.hasReportedInitialSize && uiView.bounds.width > 0 && uiView.bounds.height > 0 {
+            let terminal = uiView.getTerminal()
+            if terminal.cols > 0 && terminal.rows > 0 {
+                context.coordinator.hasReportedInitialSize = true
+                viewModel.sendResize(cols: terminal.cols, rows: terminal.rows)
+                uiView.becomeFirstResponder()
+            }
+        }
+    }
 
     class Coordinator: NSObject, SwiftTerm.TerminalViewDelegate {
         let viewModel: TerminalViewModel
         weak var terminalView: SwiftTerm.TerminalView?
+        var hasReportedInitialSize = false
 
         init(viewModel: TerminalViewModel) {
             self.viewModel = viewModel
@@ -128,11 +139,22 @@ struct TerminalRepresentable: NSViewRepresentable {
         return termView
     }
 
-    func updateNSView(_ nsView: SwiftTerm.TerminalView, context: Context) {}
+    func updateNSView(_ nsView: SwiftTerm.TerminalView, context: Context) {
+        // Send initial terminal size and grab focus once the view has been laid out
+        if !context.coordinator.hasReportedInitialSize && nsView.bounds.width > 0 && nsView.bounds.height > 0 {
+            let terminal = nsView.getTerminal()
+            if terminal.cols > 0 && terminal.rows > 0 {
+                context.coordinator.hasReportedInitialSize = true
+                viewModel.sendResize(cols: terminal.cols, rows: terminal.rows)
+                nsView.window?.makeFirstResponder(nsView)
+            }
+        }
+    }
 
     class Coordinator: NSObject, SwiftTerm.TerminalViewDelegate {
         let viewModel: TerminalViewModel
         weak var terminalView: SwiftTerm.TerminalView?
+        var hasReportedInitialSize = false
 
         init(viewModel: TerminalViewModel) {
             self.viewModel = viewModel
