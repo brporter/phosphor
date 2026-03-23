@@ -77,6 +77,9 @@ final class WebSocketManager: NSObject, @unchecked Sendable {
     }
 
     func sendStdin(_ data: Data) {
+        // Block stdin when encryption is required but key hasn't been provided yet
+        if isEncrypted && encryptionKey == nil { return }
+
         let payload: Data
         if isEncrypted, let key = encryptionKey {
             guard let encrypted = try? CryptoManager.encrypt(key: key, plaintext: data) else { return }

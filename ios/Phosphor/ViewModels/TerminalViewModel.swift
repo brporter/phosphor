@@ -115,7 +115,10 @@ final class TerminalViewModel {
             encryptionState = .failed(salt: salt)
             return
         }
-        let key = CryptoManager.deriveKey(passphrase: passphrase, salt: saltData)
+        guard let key = try? CryptoManager.deriveKey(passphrase: passphrase, salt: saltData) else {
+            encryptionState = .failed(salt: salt)
+            return
+        }
 
         if wsManager.setEncryptionKey(key) {
             encryptionState = .unlocked

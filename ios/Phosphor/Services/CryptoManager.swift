@@ -11,11 +11,11 @@ struct CryptoManager: Sendable {
 
     /// Derive a 256-bit AES key from a passphrase and salt using PBKDF2-SHA256.
     /// Parameters must match Go (internal/crypto/crypto.go) and web (web/src/lib/crypto.ts).
-    static func deriveKey(passphrase: String, salt: Data) -> SymmetricKey {
+    static func deriveKey(passphrase: String, salt: Data) throws -> SymmetricKey {
         let passphraseData = Data(passphrase.utf8)
         var derivedKeyBytes = [UInt8](repeating: 0, count: keySize)
 
-        _ = derivedKeyBytes.withUnsafeMutableBytes { derivedKeyBuffer in
+        let status = derivedKeyBytes.withUnsafeMutableBytes { derivedKeyBuffer in
             passphraseData.withUnsafeBytes { passphraseBuffer in
                 salt.withUnsafeBytes { saltBuffer in
                     CCKeyDerivationPBKDF(
@@ -33,6 +33,10 @@ struct CryptoManager: Sendable {
             }
         }
 
+        guard status == kCCSuccess else {
+            throw CryptoError.keyDerivationFailed(status: status)
+        }
+
         return SymmetricKey(data: derivedKeyBytes)
     }
 
@@ -41,6 +45,7 @@ struct CryptoManager: Sendable {
     enum CryptoError: Error {
         case encryptionFailed
         case ciphertextTooShort
+        case keyDerivationFailed(status: Int32)
     }
 
     // MARK: - Encrypt
@@ -78,7 +83,7 @@ struct CryptoManager: Sendable {
     /// The derived key must match the Go output exactly.
     static func verifyCrossPlatformKeyDerivation() -> Bool {
         let salt = Data(repeating: 0, count: 16)
-        let key = deriveKey(passphrase: "test-passphrase", salt: salt)
+        guard let key = try? deriveKey(passphrase: "test-passphrase", salt: salt) else { return false }
         let expectedBase64 = "r9YiIgH0Ka4xNmQmx/anXNNfAmqFPHaPFlQCeyz/tY="
         let expectedKey = Data(base64Encoded: expectedBase64)!
         return key.withUnsafeBytes { keyBytes in
@@ -91,7 +96,7 @@ struct CryptoManager: Sendable {
     /// Round-trip test: encrypt then decrypt, verify plaintext matches.
     static func verifyRoundTrip() -> Bool {
         let salt = Data(repeating: 0, count: 16)
-        let key = deriveKey(passphrase: "test", salt: salt)
+        guard let key = try? deriveKey(passphrase: "test", salt: salt) else { return false }
         let plaintext = Data("hello, encrypted terminal!".utf8)
         guard let encrypted = try? encrypt(key: key, plaintext: plaintext),
               let decrypted = try? decrypt(key: key, data: encrypted) else {
