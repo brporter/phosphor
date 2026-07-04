@@ -263,4 +263,4 @@ docker run -p 8080:8080 \
   phosphor-relay
 ```
 
-For Azure Container Apps, the `deploy/azure/main.bicep` template accepts `microsoftClientId`, `microsoftClientSecret`, `googleClientId`, and `googleClientSecret` as parameters. Apple parameters need to be added to the Bicep template if deploying Apple auth via Azure.
+For the production VM deployment, all provider credentials live in `/opt/phosphor/.env` on the VM — see `deploy/vm/README.md` and `deploy/vm/.env-template`.
