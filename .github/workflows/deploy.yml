@@ -6,67 +6,33 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write
   contents: write
+  packages: write
 
 env:
-  AZURE_SUBSCRIPTION_ID: ae60afd2-33e1-4d0a-8874-b840b890922b
-  RESOURCE_GROUP: betaporter
-  CONTAINER_APP_NAME: phosphor
+  IMAGE: ghcr.io/${{ github.repository_owner }}/phosphor-relay
 
 jobs:
-  # ── Build relay Docker image, push to ACR, deploy to Container Apps ──
-  deploy:
-    name: Deploy Relay
+  # ── Build relay Docker image, push to GHCR ──
+  # The VM at shell.betaporter.dev pulls and runs it (see deploy/vm/README.md).
+  build-push:
+    name: Build & Push Relay Image
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - uses: actions/checkout@v4
 
-      - name: Azure Login
-        uses: azure/login@v2
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Get ACR login server
-        id: acr
-        run: |
-          ACR_SERVER=$(az containerapp show \
-            -n ${{ env.CONTAINER_APP_NAME }} \
-            -g ${{ env.RESOURCE_GROUP }} \
-            --query 'properties.configuration.registries[0].server' -o tsv)
-          ACR_NAME=$(echo "$ACR_SERVER" | cut -d. -f1)
-          echo "server=$ACR_SERVER" >> "$GITHUB_OUTPUT"
-          echo "name=$ACR_NAME" >> "$GITHUB_OUTPUT"
-
-      - name: Log in to ACR
-        run: az acr login --name ${{ steps.acr.outputs.name }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
         run: |
-          IMAGE="${{ steps.acr.outputs.server }}/phosphor-relay:${{ github.sha }}"
-          docker build -t "$IMAGE" -f deploy/Dockerfile .
-          docker push "$IMAGE"
-
-      - name: Deploy to Container App
-        run: |
-          az containerapp update \
-            -n ${{ env.CONTAINER_APP_NAME }} \
-            -g ${{ env.RESOURCE_GROUP }} \
-            --image "${{ steps.acr.outputs.server }}/phosphor-relay:${{ github.sha }}" \
-            --set-env-vars \
-              "MICROSOFT_CLIENT_ID=${{ secrets.MICROSOFT_CLIENT_ID }}" \
-              "MICROSOFT_CLIENT_SECRET=${{ secrets.MICROSOFT_CLIENT_SECRET }}" \
-              "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" \
-              "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
-              "APPLE_CLIENT_ID=${{ secrets.APPLE_CLIENT_ID }}" \
-              "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" \
-              "APPLE_KEY_ID=${{ secrets.APPLE_KEY_ID }}" \
-              "APPLE_PRIVATE_KEY=${{ secrets.APPLE_PRIVATE_KEY }}" \
-              "REDIS_URL=${{ secrets.REDIS_URL }}" \
-              "API_KEY_SECRET=${{ secrets.API_KEY_SECRET }}"
+          docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" -f deploy/Dockerfile .
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
 
   # ── Build CLI for all platforms, create GitHub Release ──
   release:

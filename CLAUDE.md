@@ -54,4 +54,4 @@ Defined in `internal/protocol/` (Go) and `web/src/lib/protocol.ts` (TypeScript) 
 - **Frontend organization**: `auth/` (OIDC context/hooks), `components/` (React components), `hooks/` (useWebSocket, useSessions), `lib/` (protocol.ts, api.ts)
 - **Styling**: raw CSS with custom properties, dark terminal aesthetic (green-on-black, Fira Code, scanline overlay). No CSS framework.
 - **IDs**: session and viewer IDs generated with nanoid
-- **Deployment**: multi-stage Docker build (node → go → distroless), Azure Container Apps via Bicep (`deploy/`)
+- **Deployment**: multi-stage Docker build (node → go → distroless), pushed to GHCR by CI; a Docker Compose stack (Caddy + relay + Redis + Watchtower) on a Linux VM pulls and runs it (`deploy/vm/README.md`)
