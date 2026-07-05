@@ -34,7 +34,7 @@ services:
       - redis-data:/data
 
   watchtower:
-    image: containrrr/watchtower
+    image: nickfedor/watchtower
     restart: unless-stopped
     command: --label-enable --interval 300 --cleanup
     volumes:
