@@ -1,16 +1,4 @@
 services:
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
-
   relay:
     image: ghcr.io/brporter/phosphor-relay:latest
     restart: unless-stopped
@@ -23,6 +11,10 @@ services:
       - redis
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
+    networks:
+      default: {}
+      web:
+        aliases: [phosphor-relay]
     # Uncomment to enable the API-key revocation blocklist:
     # volumes:
     #   - ./revoked-keys.txt:/etc/phosphor/revoked-keys.txt:ro
@@ -33,14 +25,9 @@ services:
     volumes:
       - redis-data:/data
 
-  watchtower:
-    image: nickfedor/watchtower
-    restart: unless-stopped
-    command: --label-enable --interval 300 --cleanup
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+networks:
+  web:
+    external: true
 
 volumes:
-  caddy-data:
-  caddy-config:
   redis-data:
