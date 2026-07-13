@@ -53,6 +53,12 @@ export function Layout() {
                 {user.profile?.email ?? user.profile?.sub ?? "signed in"}
               </span>
               <Link
+                to="/keys"
+                style={{ color: "#00aa33", fontSize: 12, textDecoration: "none" }}
+              >
+                keys
+              </Link>
+              <Link
                 to="/settings"
                 style={{ color: "#00aa33", fontSize: 12, textDecoration: "none" }}
               >

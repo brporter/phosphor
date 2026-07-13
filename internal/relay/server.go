@@ -46,6 +46,7 @@ type Server struct {
 	tunnels       TunnelDialer
 	sshPublicAddr string
 	sshHostKey    ssh.PublicKey
+	bridges       bridgeCounts
 }
 
 // NewServer creates a new relay server.
@@ -60,6 +61,9 @@ func (s *Server) Handler() http.Handler {
 	// WebSocket endpoints (auth handled in-protocol via Hello/Join messages)
 	mux.HandleFunc("GET /ws/cli", s.HandleCLIWebSocket)
 	mux.HandleFunc("GET /ws/view/{id}", s.HandleViewerWebSocket)
+
+	// SSH bridge: browser WASM SSH client <-> machine tunnel
+	mux.HandleFunc("GET /ws/ssh/{machineID}", s.HandleSSHBridge)
 
 	// REST API (auth via middleware)
 	mux.HandleFunc("GET /api/sessions", s.HandleListSessions)
