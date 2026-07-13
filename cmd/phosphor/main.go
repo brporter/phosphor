@@ -16,17 +16,16 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:   "phosphor",
 		Short: "Access your machines from the browser over SSH tunnels",
-		Long: `phosphor exposes a machine's SSH daemon to the Phosphor relay over a
-reverse tunnel. Users connect from the Phosphor web app, which runs an
-SSH client in the browser end-to-end to the machine — the relay only
-ever pipes ciphertext.
+		Long: `phosphor is a web-based SSH tunnel aggregator. phosphor allows you to SSH into your machines,
+no matter where they are by exposing your local SSH daemon over a reverse tunnel. Phosphor then lets you use a
+web-based UI to log in to these tunnels. Importantly, authentication is kept local, and encryption is end-to-end.
 
 Typical setup on a machine you want to reach:
   phosphor enroll --relay https://your-relay-server
   phosphor tunnel`,
 	}
 
-	rootCmd.PersistentFlags().StringVar(&relayURL, "relay", "", "Relay server URL")
+	rootCmd.PersistentFlags().StringVar(&relayURL, "relay", "phosphor.betaporter.dev", "Relay server URL")
 
 	resolveRelay := func() (string, error) {
 		relay := relayURL

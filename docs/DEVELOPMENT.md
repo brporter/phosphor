@@ -49,7 +49,7 @@ Starts the Vite dev server on `:3000`, proxying `/ws` and `/api` to the relay on
 **Enroll and tunnel a machine:**
 
 ```sh
-go run ./cmd/phosphor enroll --relay http://localhost:8080
+go run ./cmd/phosphor enroll --relay http://localhost:8080 --api-key phk:dev
 go run ./cmd/phosphor tunnel
 ```
 
