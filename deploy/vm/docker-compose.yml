@@ -6,28 +6,47 @@ services:
     environment:
       ADDR: ":8080"
       BASE_URL: "https://phosphor.betaporter.dev"
-      REDIS_URL: "redis://redis:6379"
+      DATABASE_URL: "postgres://phosphor:${POSTGRES_PASSWORD}@postgres:5432/phosphor?sslmode=disable"
+      SSH_ADDR: ":2222"
+      SSH_HOST_KEY_FILE: "/etc/phosphor/ssh_host_key"
+      # Host:port CLIs dial for reverse tunnels (defaults to BASE_URL host + SSH_ADDR port).
+      SSH_PUBLIC_ADDR: "phosphor.betaporter.dev:2222"
     depends_on:
-      - redis
+      postgres:
+        condition: service_healthy
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
+    # Raw SSH port for CLI reverse tunnels — exposed directly (Caddy fronts
+    # only HTTP/WS). Open 2222 in the VM firewall / NSG.
+    ports:
+      - "2222:2222"
+    volumes:
+      # Persist the SSH host key so its fingerprint is stable across redeploys.
+      - phosphor-etc:/etc/phosphor
     networks:
       default: {}
       web:
         aliases: [phosphor-relay]
-    # Uncomment to enable the API-key revocation blocklist:
-    # volumes:
-    #   - ./revoked-keys.txt:/etc/phosphor/revoked-keys.txt:ro
 
-  redis:
-    image: redis:7-alpine
+  postgres:
+    image: postgres:17-alpine
     restart: unless-stopped
+    environment:
+      POSTGRES_USER: phosphor
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: phosphor
     volumes:
-      - redis-data:/data
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U phosphor"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
 networks:
   web:
     external: true
 
 volumes:
-  redis-data:
+  pg-data:
+  phosphor-etc:

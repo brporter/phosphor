@@ -428,6 +428,20 @@ func (s *Server) HandleGenerateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Record the key against the (possibly just-created) user so revocation
+	// is tracked in the database. Unknown key IDs are treated as revoked.
+	user, err := s.db.GetOrCreateUser(r.Context(), provider, sub, email)
+	if err != nil {
+		s.logger.Error("resolving user for api key", "err", err)
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+	if err := s.db.RecordAPIKey(r.Context(), keyID, user.ID); err != nil {
+		s.logger.Error("recording api key", "err", err)
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"api_key": "phk:" + key,

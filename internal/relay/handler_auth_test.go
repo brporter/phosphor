@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/brporter/phosphor/internal/auth"
+
+	dbstore "github.com/brporter/phosphor/internal/store"
 )
 
 // newTestAuthServer creates a *Server configured with a mock OIDC provider.
@@ -45,11 +47,6 @@ func newTestAuthServer(t *testing.T) *Server {
 		json.NewEncoder(w).Encode(map[string]string{"id_token": "mock-id-token-value"})
 	})
 
-	store := NewMemorySessionStore()
-	hub := NewHub(store, nil, "test", slog.Default())
-	store.SetExpiryCallback(func(ctx context.Context, id string) {
-		hub.Unregister(ctx, id)
-	})
 	verifier := auth.NewVerifier(slog.Default())
 	err := verifier.AddProvider(context.Background(), auth.ProviderConfig{
 		Name:     "test",
@@ -63,7 +60,7 @@ func newTestAuthServer(t *testing.T) *Server {
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
 
-	return NewServer(hub, slog.Default(), "http://localhost:8080", verifier, true, authSessions, nil, NewBlocklist(""), 60*time.Second)
+	return NewServer(slog.Default(), "http://localhost:8080", verifier, true, authSessions, nil, dbstore.NewFake())
 }
 
 // --- PKCE helper tests ---

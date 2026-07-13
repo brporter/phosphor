@@ -1,8 +1,9 @@
 import { BrowserRouter, Routes, Route } from "react-router";
 import { AuthProvider } from "./auth/AuthProvider";
 import { Layout } from "./components/Layout";
-import { SessionList } from "./components/SessionList";
-import { TerminalView } from "./components/TerminalView";
+import { MachineList } from "./components/MachineList";
+import { ConnectView } from "./components/ConnectView";
+import { KeysPage } from "./components/KeysPage";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { SettingsPage } from "./components/SettingsPage";
 
@@ -16,15 +17,23 @@ export function App() {
               index
               element={
                 <ProtectedRoute>
-                  <SessionList />
+                  <MachineList />
                 </ProtectedRoute>
               }
             />
             <Route
-              path="/session/:id"
+              path="/machine/:id"
               element={
                 <ProtectedRoute>
-                  <TerminalView />
+                  <ConnectView />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/keys"
+              element={
+                <ProtectedRoute>
+                  <KeysPage />
                 </ProtectedRoute>
               }
             />

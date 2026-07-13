@@ -2,10 +2,10 @@
 
 The relay runs as a Docker Compose stack on a single Linux VM:
 
-- **caddy** — terminates TLS for `phosphor.betaporter.dev` (automatic Let's Encrypt) and reverse-proxies to the relay, including the `/ws/*` WebSocket routes.
-- **relay** — the phosphor relay image, pulled from GHCR (`ghcr.io/brporter/phosphor-relay:latest`). The image is **public** (built entirely from this public repo; secrets are injected at runtime), so no registry credentials are needed. CI pushes a new `:latest` (plus a `:<sha>` tag for rollbacks) on every push to `main`.
-- **redis** — local session/auth store (replaces Azure Cache for Redis).
-- **watchtower** — polls GHCR every 5 minutes and restarts the relay when `:latest` changes. Scoped by label so it only touches the relay. Note: active terminal sessions drop when the relay restarts.
+- **caddy** — terminates TLS for `phosphor.betaporter.dev` (automatic Let's Encrypt) and reverse-proxies HTTP + the `/ws/*` WebSocket routes to the relay. Caddy fronts HTTP/WS **only**; the raw SSH gateway port is exposed directly (see below).
+- **relay** — the phosphor relay image, pulled from GHCR (`ghcr.io/brporter/phosphor-relay:latest`). The image is **public** (built entirely from this public repo; secrets are injected at runtime), so no registry credentials are needed. CI pushes a new `:latest` (plus a `:<sha>` tag for rollbacks) on every push to `main`. Listens on `:8080` (HTTP, behind Caddy) and `:2222` (SSH gateway, exposed directly). Persists its SSH host key on the `phosphor-etc` volume so the fingerprint is stable across redeploys.
+- **postgres** — durable state (tenants, users, machines, API keys) on the `pg-data` volume.
+- **watchtower** — polls GHCR every 5 minutes and restarts the relay when `:latest` changes. Scoped by label so it only touches the relay. Note: in-flight browser SSH sessions drop when the relay restarts; CLI tunnels auto-reconnect.
 
 ## One-time setup
 
@@ -25,9 +25,12 @@ The relay runs as a Docker Compose stack on a single Linux VM:
    ```
 
 4. **Fill in secrets**: `cd /opt/phosphor`, copy `.env-template` to `.env`,
-   and populate the OIDC credentials and `API_KEY_SECRET`. `chmod 600 .env`.
+   and populate `POSTGRES_PASSWORD`, the OIDC credentials, and `API_KEY_SECRET`.
+   `chmod 600 .env`.
 
-5. **Open ports 80 and 443** in the VM's Azure NSG (and any host firewall).
+5. **Open ports** in the VM's Azure NSG (and any host firewall):
+   - **80, 443** — Caddy (HTTP/HTTPS + WebSocket).
+   - **2222** — the SSH gateway that `phosphor tunnel` clients dial.
 
 6. **Start the stack**:
 
@@ -38,7 +41,20 @@ The relay runs as a Docker Compose stack on a single Linux VM:
 
 7. **Point DNS at the VM**: in the `betaporter.dev` zone, set the `phosphor`
    CNAME record to `shell.betaporter.dev`. Caddy obtains the TLS certificate
-   automatically once DNS resolves here.
+   automatically once DNS resolves here. Confirm `SSH_PUBLIC_ADDR` in
+   `docker-compose.yml` matches the hostname CLIs should dial (default
+   `phosphor.betaporter.dev:2222`).
+
+## Enrolling a machine
+
+On any machine you want to reach:
+
+```sh
+phosphor enroll --relay https://phosphor.betaporter.dev
+phosphor tunnel      # run under systemd/launchd to keep it alive
+```
+
+The machine must run an SSH daemon (OpenSSH; on Windows, enable OpenSSH Server).
 
 ## Operations
 
@@ -49,6 +65,7 @@ The relay runs as a Docker Compose stack on a single Linux VM:
 | Deploy log | `sudo docker compose logs -f watchtower` |
 | Force an update now | `sudo docker compose pull relay` then `sudo docker compose up -d relay` |
 | Roll back | edit `docker-compose.yml` to pin `phosphor-relay:<sha>`, then `sudo docker compose up -d relay` (re-pin `:latest` afterwards) |
+| Back up the database | `sudo docker compose exec postgres pg_dump -U phosphor phosphor > backup.sql` |
 | Restart everything | `sudo docker compose restart` |
 
 Health check: `curl https://phosphor.betaporter.dev/health`

@@ -3,19 +3,22 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
-	gonanoid "github.com/matoous/go-nanoid/v2"
-	"github.com/redis/go-redis/v9"
 
 	"github.com/brporter/phosphor/internal/auth"
 	"github.com/brporter/phosphor/internal/relay"
+	"github.com/brporter/phosphor/internal/sshgate"
+	dbstore "github.com/brporter/phosphor/internal/store"
 )
 
 func main() {
@@ -35,15 +38,19 @@ func main() {
 
 	devMode := os.Getenv("DEV_MODE") != ""
 
-	gracePeriod := 5 * time.Minute
-	if gp := os.Getenv("GRACE_PERIOD"); gp != "" {
-		parsed, err := time.ParseDuration(gp)
-		if err != nil {
-			logger.Error("invalid GRACE_PERIOD", "value", gp, "err", err)
-			os.Exit(1)
-		}
-		gracePeriod = parsed
+	// Durable state (tenants, users, machines, API keys) lives in Postgres.
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		logger.Error("DATABASE_URL is required")
+		os.Exit(1)
 	}
+	db, err := dbstore.New(context.Background(), databaseURL)
+	if err != nil {
+		logger.Error("database setup failed", "err", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+	logger.Info("connected to Postgres, migrations applied")
 
 	// Set up OIDC verifier (providers configured via env vars)
 	verifier := auth.NewVerifier(logger)
@@ -98,63 +105,8 @@ func main() {
 		}
 	}
 
-	// Generate unique relay instance ID
-	relayID, _ := gonanoid.New(12)
-
-	// Set up backends based on REDIS_URL
-	var (
-		store        relay.SessionStore
-		bus          relay.MessageBus
-		authSessions relay.AuthSessionStoreI
-	)
-
-	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
-		opts, err := redis.ParseURL(redisURL)
-		if err != nil {
-			logger.Error("invalid REDIS_URL", "err", err)
-			os.Exit(1)
-		}
-		rdb := redis.NewClient(opts)
-
-		if err := rdb.Ping(ctx).Err(); err != nil {
-			logger.Error("redis ping failed", "err", err)
-			os.Exit(1)
-		}
-		logger.Info("connected to Redis", "url", redisURL)
-
-		rs := relay.NewRedisSessionStore(rdb, logger)
-		rs.SetExpiryCallback(nil) // wired after hub creation below
-		store = rs
-		bus = relay.NewRedisMessageBus(rdb, logger)
-		authSessions = relay.NewRedisAuthSessionStore(rdb)
-	} else {
-		ms := relay.NewMemorySessionStore()
-		store = ms
-		bus = nil
-		authSessions = relay.NewMemoryAuthSessionStore(5 * time.Minute)
-
-		// Wire expiry callback after hub creation (deferred below)
-		defer func() {
-			// This is set after hub is created via the closure
-		}()
-	}
-
-	hub := relay.NewHub(store, bus, relayID, logger)
-
-	// Wire expiry callbacks now that hub exists
-	if ms, ok := store.(*relay.MemorySessionStore); ok {
-		ms.SetExpiryCallback(func(ctx context.Context, id string) {
-			hub.Unregister(ctx, id)
-			logger.Info("grace period expired, session removed", "id", id)
-		})
-	}
-	if rs, ok := store.(*relay.RedisSessionStore); ok {
-		rs.SetExpiryCallback(func(ctx context.Context, id string) {
-			hub.Unregister(ctx, id)
-			logger.Info("grace period expired, session removed", "id", id)
-		})
-		rs.StartExpiryPoller(ctx, 10*time.Second)
-	}
+	// Pending OIDC auth flows live in-memory (single-instance deployment).
+	authSessions := relay.NewMemoryAuthSessionStore(5 * time.Minute)
 
 	// API key signing secret
 	apiKeySecret := []byte(os.Getenv("API_KEY_SECRET"))
@@ -165,15 +117,25 @@ func main() {
 		logger.Warn("API_KEY_SECRET not set — generated random secret; API keys will not survive restarts")
 	}
 
-	// API key revocation blocklist
-	revocationFile := os.Getenv("API_KEY_REVOCATION_FILE")
-	if revocationFile == "" {
-		revocationFile = "/etc/phosphor/revoked-keys.txt"
-	}
-	blocklist := relay.NewBlocklist(revocationFile)
-	defer blocklist.Stop()
+	srv := relay.NewServer(logger, baseURL, verifier, devMode, authSessions, apiKeySecret, db)
 
-	srv := relay.NewServer(hub, logger, baseURL, verifier, devMode, authSessions, apiKeySecret, blocklist, gracePeriod)
+	// SSH gateway for CLI reverse tunnels
+	sshAddr := os.Getenv("SSH_ADDR")
+	if sshAddr == "" {
+		sshAddr = ":2222"
+	}
+	hostKeyFile := os.Getenv("SSH_HOST_KEY_FILE")
+	if hostKeyFile == "" {
+		hostKeyFile = "/etc/phosphor/ssh_host_key"
+	}
+	hostKey, err := sshgate.LoadOrCreateHostKey(hostKeyFile)
+	if err != nil {
+		logger.Error("ssh host key setup failed", "err", err)
+		os.Exit(1)
+	}
+	registry := sshgate.NewRegistry()
+	gate := sshgate.NewServer(registry, db, hostKey, logger)
+	srv.SetSSHGate(registry, sshPublicAddr(baseURL, sshAddr), hostKey.PublicKey())
 
 	httpServer := &http.Server{
 		Addr:         addr,
@@ -187,7 +149,22 @@ func main() {
 	defer cancel()
 
 	go func() {
-		logger.Info("relay server starting", "addr", addr, "base_url", baseURL, "dev_mode", devMode, "relay_id", relayID, "redis", os.Getenv("REDIS_URL") != "", "grace_period", gracePeriod)
+		if err := gate.ListenAndServe(ctx, sshAddr); err != nil {
+			logger.Error("ssh gateway error", "err", err)
+			cancel()
+		}
+	}()
+
+	// Dev-only: expose one machine's tunnel on a raw TCP port so a normal
+	// `ssh -p <port> localhost` can exercise the tunnel before the browser
+	// client exists. Never enabled in production.
+	if debugListen := os.Getenv("SSH_DEBUG_LISTEN"); debugListen != "" && devMode {
+		debugMachine := os.Getenv("SSH_DEBUG_MACHINE")
+		go runDebugListener(ctx, debugListen, debugMachine, registry, logger)
+	}
+
+	go func() {
+		logger.Info("relay server starting", "addr", addr, "base_url", baseURL, "dev_mode", devMode, "ssh_addr", sshAddr)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("server error", "err", err)
 			cancel()
@@ -201,6 +178,61 @@ func main() {
 	defer shutdownCancel()
 
 	authSessions.Stop()
-	hub.CloseAll()
 	httpServer.Shutdown(shutdownCtx)
+}
+
+// sshPublicAddr derives the host:port CLIs should dial for the SSH gateway:
+// SSH_PUBLIC_ADDR wins, otherwise the BASE_URL hostname plus the gateway's
+// listen port.
+func sshPublicAddr(baseURL, sshAddr string) string {
+	if pub := os.Getenv("SSH_PUBLIC_ADDR"); pub != "" {
+		return pub
+	}
+	host := "localhost"
+	if u, err := url.Parse(baseURL); err == nil && u.Hostname() != "" {
+		host = u.Hostname()
+	}
+	_, port, err := net.SplitHostPort(sshAddr)
+	if err != nil || port == "" {
+		port = "2222"
+	}
+	return net.JoinHostPort(host, port)
+}
+
+// runDebugListener pipes raw TCP connections into one machine's tunnel so a
+// plain ssh client can exercise it during development.
+func runDebugListener(ctx context.Context, addr, machineID string, registry *sshgate.Registry, logger *slog.Logger) {
+	if machineID == "" {
+		logger.Warn("SSH_DEBUG_LISTEN set but SSH_DEBUG_MACHINE is empty; debug listener disabled")
+		return
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		logger.Error("debug listener failed", "addr", addr, "err", err)
+		return
+	}
+	go func() {
+		<-ctx.Done()
+		ln.Close()
+	}()
+	logger.Warn("SSH DEBUG listener active — raw TCP piped to tunnel", "addr", addr, "machine", machineID)
+	for {
+		nc, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		go func() {
+			defer nc.Close()
+			tc, err := registry.Dial(machineID)
+			if err != nil {
+				logger.Warn("debug dial failed", "err", err)
+				return
+			}
+			defer tc.Close()
+			done := make(chan struct{}, 2)
+			go func() { io.Copy(tc, nc); done <- struct{}{} }()
+			go func() { io.Copy(nc, tc); done <- struct{}{} }()
+			<-done
+		}()
+	}
 }

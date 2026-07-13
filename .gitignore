@@ -17,6 +17,10 @@ web/node_modules/
 web/dist/
 web/test-results/
 
+# Generated WASM artifacts (built by `make wasm`)
+web/public/phosphor-ssh.wasm
+web/public/wasm_exec.js
+
 # IDE
 .vscode/
 .idea/
