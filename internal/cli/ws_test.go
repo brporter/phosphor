@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coder/websocket"
 	"github.com/brporter/phosphor/internal/protocol"
+	"github.com/coder/websocket"
 )
 
 // newEchoWSServer creates a WS echo server that reads and echoes back messages.

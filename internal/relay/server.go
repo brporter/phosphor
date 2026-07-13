@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/brporter/phosphor/internal/auth"
 	"github.com/brporter/phosphor/internal/store"
@@ -40,6 +41,11 @@ type Server struct {
 	apiKeySecret []byte
 	db           DataStore
 	gracePeriod  time.Duration
+
+	// SSH gateway wiring (SetSSHGate)
+	tunnels       TunnelDialer
+	sshPublicAddr string
+	sshHostKey    ssh.PublicKey
 }
 
 // NewServer creates a new relay server.
@@ -58,6 +64,13 @@ func (s *Server) Handler() http.Handler {
 	// REST API (auth via middleware)
 	mux.HandleFunc("GET /api/sessions", s.HandleListSessions)
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.HandleDestroySession)
+
+	// Machines API (SSH-tunnel architecture)
+	mux.HandleFunc("GET /api/machines", s.HandleListMachines)
+	mux.HandleFunc("POST /api/machines", s.HandleCreateMachine)
+	mux.HandleFunc("PATCH /api/machines/{id}", s.HandleUpdateMachine)
+	mux.HandleFunc("DELETE /api/machines/{id}", s.HandleDeleteMachine)
+	mux.HandleFunc("GET /api/ssh-info", s.HandleSSHInfo)
 
 	// Auth flow endpoints
 	mux.HandleFunc("GET /api/auth/config", s.HandleAuthConfig)

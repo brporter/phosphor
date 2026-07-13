@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,6 +19,7 @@ import (
 
 	"github.com/brporter/phosphor/internal/auth"
 	"github.com/brporter/phosphor/internal/relay"
+	"github.com/brporter/phosphor/internal/sshgate"
 	dbstore "github.com/brporter/phosphor/internal/store"
 )
 
@@ -182,6 +186,24 @@ func main() {
 
 	srv := relay.NewServer(hub, logger, baseURL, verifier, devMode, authSessions, apiKeySecret, db, gracePeriod)
 
+	// SSH gateway for CLI reverse tunnels
+	sshAddr := os.Getenv("SSH_ADDR")
+	if sshAddr == "" {
+		sshAddr = ":2222"
+	}
+	hostKeyFile := os.Getenv("SSH_HOST_KEY_FILE")
+	if hostKeyFile == "" {
+		hostKeyFile = "/etc/phosphor/ssh_host_key"
+	}
+	hostKey, err := sshgate.LoadOrCreateHostKey(hostKeyFile)
+	if err != nil {
+		logger.Error("ssh host key setup failed", "err", err)
+		os.Exit(1)
+	}
+	registry := sshgate.NewRegistry()
+	gate := sshgate.NewServer(registry, db, hostKey, logger)
+	srv.SetSSHGate(registry, sshPublicAddr(baseURL, sshAddr), hostKey.PublicKey())
+
 	httpServer := &http.Server{
 		Addr:         addr,
 		Handler:      srv.Handler(),
@@ -194,7 +216,22 @@ func main() {
 	defer cancel()
 
 	go func() {
-		logger.Info("relay server starting", "addr", addr, "base_url", baseURL, "dev_mode", devMode, "relay_id", relayID, "redis", os.Getenv("REDIS_URL") != "", "grace_period", gracePeriod)
+		if err := gate.ListenAndServe(ctx, sshAddr); err != nil {
+			logger.Error("ssh gateway error", "err", err)
+			cancel()
+		}
+	}()
+
+	// Dev-only: expose one machine's tunnel on a raw TCP port so a normal
+	// `ssh -p <port> localhost` can exercise the tunnel before the browser
+	// client exists. Never enabled in production.
+	if debugListen := os.Getenv("SSH_DEBUG_LISTEN"); debugListen != "" && devMode {
+		debugMachine := os.Getenv("SSH_DEBUG_MACHINE")
+		go runDebugListener(ctx, debugListen, debugMachine, registry, logger)
+	}
+
+	go func() {
+		logger.Info("relay server starting", "addr", addr, "base_url", baseURL, "dev_mode", devMode, "relay_id", relayID, "ssh_addr", sshAddr, "grace_period", gracePeriod)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("server error", "err", err)
 			cancel()
@@ -210,4 +247,60 @@ func main() {
 	authSessions.Stop()
 	hub.CloseAll()
 	httpServer.Shutdown(shutdownCtx)
+}
+
+// sshPublicAddr derives the host:port CLIs should dial for the SSH gateway:
+// SSH_PUBLIC_ADDR wins, otherwise the BASE_URL hostname plus the gateway's
+// listen port.
+func sshPublicAddr(baseURL, sshAddr string) string {
+	if pub := os.Getenv("SSH_PUBLIC_ADDR"); pub != "" {
+		return pub
+	}
+	host := "localhost"
+	if u, err := url.Parse(baseURL); err == nil && u.Hostname() != "" {
+		host = u.Hostname()
+	}
+	_, port, err := net.SplitHostPort(sshAddr)
+	if err != nil || port == "" {
+		port = "2222"
+	}
+	return net.JoinHostPort(host, port)
+}
+
+// runDebugListener pipes raw TCP connections into one machine's tunnel so a
+// plain ssh client can exercise it during development.
+func runDebugListener(ctx context.Context, addr, machineID string, registry *sshgate.Registry, logger *slog.Logger) {
+	if machineID == "" {
+		logger.Warn("SSH_DEBUG_LISTEN set but SSH_DEBUG_MACHINE is empty; debug listener disabled")
+		return
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		logger.Error("debug listener failed", "addr", addr, "err", err)
+		return
+	}
+	go func() {
+		<-ctx.Done()
+		ln.Close()
+	}()
+	logger.Warn("SSH DEBUG listener active — raw TCP piped to tunnel", "addr", addr, "machine", machineID)
+	for {
+		nc, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		go func() {
+			defer nc.Close()
+			tc, err := registry.Dial(machineID)
+			if err != nil {
+				logger.Warn("debug dial failed", "err", err)
+				return
+			}
+			defer tc.Close()
+			done := make(chan struct{}, 2)
+			go func() { io.Copy(tc, nc); done <- struct{}{} }()
+			go func() { io.Copy(nc, tc); done <- struct{}{} }()
+			<-done
+		}()
+	}
 }

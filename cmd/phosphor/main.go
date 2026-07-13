@@ -130,7 +130,7 @@ func main() {
 		},
 	}
 
-	rootCmd.Flags().StringVar(&relayURL, "relay", "", "Relay server URL (required)")
+	rootCmd.PersistentFlags().StringVar(&relayURL, "relay", "", "Relay server URL (required)")
 	rootCmd.Flags().StringVar(&token, "token", "", "Auth token (default: read from cache)")
 	rootCmd.Flags().StringVar(&restart, "restart", "manual", "Process restart mode: manual, auto, never")
 	rootCmd.Flags().BoolVar(&logout, "logout", false, "Clear cached authentication tokens and exit")
@@ -169,7 +169,70 @@ func main() {
 		},
 	}
 
-	rootCmd.AddCommand(loginCmd, logoutCmd, newDaemonCmd())
+	var enrollName string
+	var enrollAPIKey string
+	var enrollSSHDAddr string
+	enrollCmd := &cobra.Command{
+		Use:   "enroll",
+		Short: "Register this machine with the relay for SSH tunnel access",
+		Long:  "Generates a machine keypair, registers it under your account, and pins the relay's SSH gateway endpoint. Run once per machine, then use `phosphor tunnel`.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			relay := relayURL
+			if relay == "" {
+				relay = cli.DefaultConfig().RelayURL
+			}
+			if relay == "" {
+				return fmt.Errorf("--relay flag is required (e.g. --relay https://your-relay-server)")
+			}
+			cfg, err := cli.Enroll(context.Background(), cli.EnrollOptions{
+				RelayURL: relay,
+				Name:     enrollName,
+				APIKey:   enrollAPIKey,
+				SSHDAddr: enrollSSHDAddr,
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Machine enrolled.\n  id:      %s\n  gateway: %s\n\nStart the tunnel with: phosphor tunnel\n", cfg.MachineID, cfg.SSHAddr)
+			return nil
+		},
+	}
+	enrollCmd.Flags().StringVar(&enrollName, "name", "", "Machine display name (default: hostname)")
+	enrollCmd.Flags().StringVar(&enrollAPIKey, "api-key", "", "API key (phk:...) for headless enrollment")
+	enrollCmd.Flags().StringVar(&enrollSSHDAddr, "sshd-addr", "", "Local sshd address the tunnel exposes (default 127.0.0.1:22)")
+
+	var tunnelSSHDAddr string
+	var tunnelDebug bool
+	tunnelCmd := &cobra.Command{
+		Use:   "tunnel",
+		Short: "Maintain a reverse SSH tunnel to the relay",
+		Long:  "Connects to the relay's SSH gateway and exposes this machine's sshd through the tunnel. Reconnects automatically. Requires `phosphor enroll` first.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			machine, err := cli.LoadMachineConfig()
+			if err != nil {
+				return fmt.Errorf("no machine enrollment found — run `phosphor enroll` first (%w)", err)
+			}
+			signer, err := cli.LoadMachineKey()
+			if err != nil {
+				return fmt.Errorf("loading machine key: %w", err)
+			}
+			level := slog.LevelInfo
+			if tunnelDebug {
+				level = slog.LevelDebug
+			}
+			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+			return cli.RunTunnel(context.Background(), cli.TunnelOptions{
+				Machine:  machine,
+				Signer:   signer,
+				Logger:   logger,
+				SSHDAddr: tunnelSSHDAddr,
+			})
+		},
+	}
+	tunnelCmd.Flags().StringVar(&tunnelSSHDAddr, "sshd-addr", "", "Local sshd address the tunnel exposes (default from enrollment, else 127.0.0.1:22)")
+	tunnelCmd.Flags().BoolVar(&tunnelDebug, "debug", false, "Enable debug logging")
+
+	rootCmd.AddCommand(loginCmd, logoutCmd, enrollCmd, tunnelCmd, newDaemonCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
