@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
@@ -32,7 +31,6 @@ type DataStore interface {
 
 // Server is the relay HTTP server.
 type Server struct {
-	hub          *Hub
 	logger       *slog.Logger
 	baseURL      string
 	verifier     *auth.Verifier
@@ -40,7 +38,6 @@ type Server struct {
 	authSessions AuthSessionStoreI
 	apiKeySecret []byte
 	db           DataStore
-	gracePeriod  time.Duration
 
 	// SSH gateway wiring (SetSSHGate)
 	tunnels       TunnelDialer
@@ -50,24 +47,16 @@ type Server struct {
 }
 
 // NewServer creates a new relay server.
-func NewServer(hub *Hub, logger *slog.Logger, baseURL string, verifier *auth.Verifier, devMode bool, authSessions AuthSessionStoreI, apiKeySecret []byte, db DataStore, gracePeriod time.Duration) *Server {
-	return &Server{hub: hub, logger: logger, baseURL: baseURL, verifier: verifier, devMode: devMode, authSessions: authSessions, apiKeySecret: apiKeySecret, db: db, gracePeriod: gracePeriod}
+func NewServer(logger *slog.Logger, baseURL string, verifier *auth.Verifier, devMode bool, authSessions AuthSessionStoreI, apiKeySecret []byte, db DataStore) *Server {
+	return &Server{logger: logger, baseURL: baseURL, verifier: verifier, devMode: devMode, authSessions: authSessions, apiKeySecret: apiKeySecret, db: db}
 }
 
 // Handler returns the HTTP handler with all routes.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
-	// WebSocket endpoints (auth handled in-protocol via Hello/Join messages)
-	mux.HandleFunc("GET /ws/cli", s.HandleCLIWebSocket)
-	mux.HandleFunc("GET /ws/view/{id}", s.HandleViewerWebSocket)
-
 	// SSH bridge: browser WASM SSH client <-> machine tunnel
 	mux.HandleFunc("GET /ws/ssh/{machineID}", s.HandleSSHBridge)
-
-	// REST API (auth via middleware)
-	mux.HandleFunc("GET /api/sessions", s.HandleListSessions)
-	mux.HandleFunc("DELETE /api/sessions/{id}", s.HandleDestroySession)
 
 	// Machines API (SSH-tunnel architecture)
 	mux.HandleFunc("GET /api/machines", s.HandleListMachines)

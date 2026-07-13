@@ -77,8 +77,7 @@ func TestSpaHandler_Root(t *testing.T) {
 }
 
 func TestStaticHandler_NoDistDir(t *testing.T) {
-	store := NewMemorySessionStore()
-	s := &Server{hub: NewHub(store, nil, "test", slog.Default()), logger: slog.Default(), db: dbstore.NewFake()}
+	s := &Server{logger: slog.Default(), db: dbstore.NewFake()}
 
 	handler := s.StaticHandler()
 

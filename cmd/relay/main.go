@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
-	gonanoid "github.com/matoous/go-nanoid/v2"
-	"github.com/redis/go-redis/v9"
 
 	"github.com/brporter/phosphor/internal/auth"
 	"github.com/brporter/phosphor/internal/relay"
@@ -39,16 +37,6 @@ func main() {
 	}
 
 	devMode := os.Getenv("DEV_MODE") != ""
-
-	gracePeriod := 5 * time.Minute
-	if gp := os.Getenv("GRACE_PERIOD"); gp != "" {
-		parsed, err := time.ParseDuration(gp)
-		if err != nil {
-			logger.Error("invalid GRACE_PERIOD", "value", gp, "err", err)
-			os.Exit(1)
-		}
-		gracePeriod = parsed
-	}
 
 	// Durable state (tenants, users, machines, API keys) lives in Postgres.
 	databaseURL := os.Getenv("DATABASE_URL")
@@ -117,63 +105,8 @@ func main() {
 		}
 	}
 
-	// Generate unique relay instance ID
-	relayID, _ := gonanoid.New(12)
-
-	// Set up backends based on REDIS_URL
-	var (
-		store        relay.SessionStore
-		bus          relay.MessageBus
-		authSessions relay.AuthSessionStoreI
-	)
-
-	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
-		opts, err := redis.ParseURL(redisURL)
-		if err != nil {
-			logger.Error("invalid REDIS_URL", "err", err)
-			os.Exit(1)
-		}
-		rdb := redis.NewClient(opts)
-
-		if err := rdb.Ping(ctx).Err(); err != nil {
-			logger.Error("redis ping failed", "err", err)
-			os.Exit(1)
-		}
-		logger.Info("connected to Redis", "url", redisURL)
-
-		rs := relay.NewRedisSessionStore(rdb, logger)
-		rs.SetExpiryCallback(nil) // wired after hub creation below
-		store = rs
-		bus = relay.NewRedisMessageBus(rdb, logger)
-		authSessions = relay.NewRedisAuthSessionStore(rdb)
-	} else {
-		ms := relay.NewMemorySessionStore()
-		store = ms
-		bus = nil
-		authSessions = relay.NewMemoryAuthSessionStore(5 * time.Minute)
-
-		// Wire expiry callback after hub creation (deferred below)
-		defer func() {
-			// This is set after hub is created via the closure
-		}()
-	}
-
-	hub := relay.NewHub(store, bus, relayID, logger)
-
-	// Wire expiry callbacks now that hub exists
-	if ms, ok := store.(*relay.MemorySessionStore); ok {
-		ms.SetExpiryCallback(func(ctx context.Context, id string) {
-			hub.Unregister(ctx, id)
-			logger.Info("grace period expired, session removed", "id", id)
-		})
-	}
-	if rs, ok := store.(*relay.RedisSessionStore); ok {
-		rs.SetExpiryCallback(func(ctx context.Context, id string) {
-			hub.Unregister(ctx, id)
-			logger.Info("grace period expired, session removed", "id", id)
-		})
-		rs.StartExpiryPoller(ctx, 10*time.Second)
-	}
+	// Pending OIDC auth flows live in-memory (single-instance deployment).
+	authSessions := relay.NewMemoryAuthSessionStore(5 * time.Minute)
 
 	// API key signing secret
 	apiKeySecret := []byte(os.Getenv("API_KEY_SECRET"))
@@ -184,7 +117,7 @@ func main() {
 		logger.Warn("API_KEY_SECRET not set — generated random secret; API keys will not survive restarts")
 	}
 
-	srv := relay.NewServer(hub, logger, baseURL, verifier, devMode, authSessions, apiKeySecret, db, gracePeriod)
+	srv := relay.NewServer(logger, baseURL, verifier, devMode, authSessions, apiKeySecret, db)
 
 	// SSH gateway for CLI reverse tunnels
 	sshAddr := os.Getenv("SSH_ADDR")
@@ -231,7 +164,7 @@ func main() {
 	}
 
 	go func() {
-		logger.Info("relay server starting", "addr", addr, "base_url", baseURL, "dev_mode", devMode, "relay_id", relayID, "ssh_addr", sshAddr, "grace_period", gracePeriod)
+		logger.Info("relay server starting", "addr", addr, "base_url", baseURL, "dev_mode", devMode, "ssh_addr", sshAddr)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("server error", "err", err)
 			cancel()
@@ -245,7 +178,6 @@ func main() {
 	defer shutdownCancel()
 
 	authSessions.Stop()
-	hub.CloseAll()
 	httpServer.Shutdown(shutdownCtx)
 }
 

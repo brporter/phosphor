@@ -20,10 +20,9 @@ import (
 
 func newMachinesTestServer(t *testing.T) (*Server, http.Handler) {
 	t.Helper()
-	hub := NewHub(NewMemorySessionStore(), nil, "test", slog.Default())
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
-	s := NewServer(hub, slog.Default(), "http://test", nil, true, authSessions, nil, dbstore.NewFake(), 60*time.Second)
+	s := NewServer(slog.Default(), "http://test", nil, true, authSessions, nil, dbstore.NewFake())
 	return s, s.Handler()
 }
 

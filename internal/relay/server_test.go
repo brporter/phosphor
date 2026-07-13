@@ -1,7 +1,6 @@
 package relay
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -13,26 +12,24 @@ import (
 	dbstore "github.com/brporter/phosphor/internal/store"
 )
 
+func newTestServer(t *testing.T) *Server {
+	t.Helper()
+	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
+	t.Cleanup(authSessions.Stop)
+	return NewServer(slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true, authSessions, nil, dbstore.NewFake())
+}
+
 func TestNewServer(t *testing.T) {
-	store := NewMemorySessionStore()
-	hub := NewHub(store, nil, "test", slog.Default())
-	store.SetExpiryCallback(func(ctx context.Context, id string) {
-		hub.Unregister(ctx, id)
-	})
 	logger := slog.Default()
 	baseURL := "http://test"
 	verifier := auth.NewVerifier(slog.Default())
-	devMode := true
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
 
-	srv := NewServer(hub, logger, baseURL, verifier, devMode, authSessions, nil, dbstore.NewFake(), 60*time.Second)
+	srv := NewServer(logger, baseURL, verifier, true, authSessions, nil, dbstore.NewFake())
 
 	if srv == nil {
 		t.Fatal("expected non-nil server")
-	}
-	if srv.hub != hub {
-		t.Error("hub not set correctly")
 	}
 	if srv.logger != logger {
 		t.Error("logger not set correctly")
@@ -40,24 +37,16 @@ func TestNewServer(t *testing.T) {
 	if srv.baseURL != baseURL {
 		t.Errorf("baseURL: got %q, want %q", srv.baseURL, baseURL)
 	}
-	if srv.devMode != devMode {
-		t.Errorf("devMode: got %v, want %v", srv.devMode, devMode)
+	if !srv.devMode {
+		t.Error("devMode not set correctly")
 	}
 }
 
 func TestHandler_HealthEndpoint(t *testing.T) {
-	store := NewMemorySessionStore()
-	hub := NewHub(store, nil, "test", slog.Default())
-	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
-	t.Cleanup(authSessions.Stop)
-
-	srv := NewServer(hub, slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true, authSessions, nil, dbstore.NewFake(), 60*time.Second)
-
-	handler := srv.Handler()
+	handler := newTestServer(t).Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
-
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -69,21 +58,14 @@ func TestHandler_HealthEndpoint(t *testing.T) {
 }
 
 func TestHandler_RoutesExist(t *testing.T) {
-	store := NewMemorySessionStore()
-	hub := NewHub(store, nil, "test", slog.Default())
-	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
-	t.Cleanup(authSessions.Stop)
-
-	srv := NewServer(hub, slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true, authSessions, nil, dbstore.NewFake(), 60*time.Second)
-
-	handler := srv.Handler()
+	handler := newTestServer(t).Handler()
 
 	tests := []struct {
 		method string
 		path   string
 	}{
 		{http.MethodPost, "/api/auth/login"},
-		{http.MethodGet, "/api/sessions"},
+		{http.MethodGet, "/api/machines"},
 		{http.MethodGet, "/api/auth/poll"},
 		{http.MethodGet, "/health"},
 	}
@@ -92,29 +74,11 @@ func TestHandler_RoutesExist(t *testing.T) {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			rec := httptest.NewRecorder()
-
 			handler.ServeHTTP(rec, req)
 
 			if rec.Code == http.StatusNotFound {
 				t.Errorf("route %s %s returned 404, expected non-404", tc.method, tc.path)
 			}
 		})
-	}
-}
-
-func TestNewServer_GracePeriod(t *testing.T) {
-	store := NewMemorySessionStore()
-	hub := NewHub(store, nil, "test", slog.Default())
-	store.SetExpiryCallback(func(ctx context.Context, id string) {
-		hub.Unregister(ctx, id)
-	})
-	logger := slog.Default()
-	verifier := auth.NewVerifier(slog.Default())
-	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
-	t.Cleanup(authSessions.Stop)
-
-	srv := NewServer(hub, logger, "http://test", verifier, true, authSessions, nil, dbstore.NewFake(), 10*time.Minute)
-	if srv.gracePeriod != 10*time.Minute {
-		t.Errorf("gracePeriod = %v, want %v", srv.gracePeriod, 10*time.Minute)
 	}
 }

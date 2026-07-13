@@ -42,11 +42,10 @@ func (s *stubTunnels) Dial(id string) (net.Conn, error) {
 
 func newBridgeServer(t *testing.T, online bool) (*httptest.Server, string) {
 	t.Helper()
-	hub := NewHub(NewMemorySessionStore(), nil, "test", slog.Default())
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
 	db := dbstore.NewFake()
-	s := NewServer(hub, slog.Default(), "http://test", nil, true, authSessions, nil, db, 60*time.Second)
+	s := NewServer(slog.Default(), "http://test", nil, true, authSessions, nil, db)
 
 	user, err := db.GetOrCreateUser(context.Background(), "google", "alice", "alice@example.com")
 	if err != nil {
