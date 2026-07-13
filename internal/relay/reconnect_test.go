@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coder/websocket"
 	"github.com/brporter/phosphor/internal/protocol"
+	"github.com/coder/websocket"
 )
 
 func TestSession_ReconnectToken_Generated(t *testing.T) {

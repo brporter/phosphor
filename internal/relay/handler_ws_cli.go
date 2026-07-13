@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/brporter/phosphor/internal/protocol"
 	"github.com/coder/websocket"
 	gonanoid "github.com/matoous/go-nanoid/v2"
-	"github.com/brporter/phosphor/internal/protocol"
 )
 
 const (

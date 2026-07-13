@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/brporter/phosphor/internal/auth"
+
+	dbstore "github.com/brporter/phosphor/internal/store"
 )
 
 func TestNewServer(t *testing.T) {
@@ -24,7 +26,7 @@ func TestNewServer(t *testing.T) {
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
 
-	srv := NewServer(hub, logger, baseURL, verifier, devMode, authSessions, nil, NewBlocklist(""), 60*time.Second)
+	srv := NewServer(hub, logger, baseURL, verifier, devMode, authSessions, nil, dbstore.NewFake(), 60*time.Second)
 
 	if srv == nil {
 		t.Fatal("expected non-nil server")
@@ -49,7 +51,7 @@ func TestHandler_HealthEndpoint(t *testing.T) {
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
 
-	srv := NewServer(hub, slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true, authSessions, nil, NewBlocklist(""), 60*time.Second)
+	srv := NewServer(hub, slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true, authSessions, nil, dbstore.NewFake(), 60*time.Second)
 
 	handler := srv.Handler()
 
@@ -72,7 +74,7 @@ func TestHandler_RoutesExist(t *testing.T) {
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
 
-	srv := NewServer(hub, slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true, authSessions, nil, NewBlocklist(""), 60*time.Second)
+	srv := NewServer(hub, slog.Default(), "http://test", auth.NewVerifier(slog.Default()), true, authSessions, nil, dbstore.NewFake(), 60*time.Second)
 
 	handler := srv.Handler()
 
@@ -111,7 +113,7 @@ func TestNewServer_GracePeriod(t *testing.T) {
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
 
-	srv := NewServer(hub, logger, "http://test", verifier, true, authSessions, nil, NewBlocklist(""), 10*time.Minute)
+	srv := NewServer(hub, logger, "http://test", verifier, true, authSessions, nil, dbstore.NewFake(), 10*time.Minute)
 	if srv.gracePeriod != 10*time.Minute {
 		t.Errorf("gracePeriod = %v, want %v", srv.gracePeriod, 10*time.Minute)
 	}

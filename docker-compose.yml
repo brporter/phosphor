@@ -1,10 +1,19 @@
 services:
-  redis:
-    image: redis:7-alpine
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: phosphor
+      POSTGRES_PASSWORD: phosphor
+      POSTGRES_DB: phosphor
     ports:
-      - "6379:6379"
+      - "5432:5432"
     volumes:
-      - redis-data:/data
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U phosphor"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
 volumes:
-  redis-data:
+  pg-data:

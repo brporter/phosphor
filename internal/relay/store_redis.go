@@ -41,9 +41,9 @@ func (s *RedisSessionStore) SetExpiryCallback(fn ExpiryCallback) {
 	s.onExpiry = fn
 }
 
-func sessionKey(id string) string       { return "session:" + id }
+func sessionKey(id string) string          { return "session:" + id }
 func ownerKey(provider, sub string) string { return "owner:" + provider + ":" + sub }
-func expiryKey(id string) string         { return "expiry:" + id }
+func expiryKey(id string) string           { return "expiry:" + id }
 
 func (s *RedisSessionStore) Register(ctx context.Context, info SessionInfo) error {
 	pipe := s.rdb.Pipeline()

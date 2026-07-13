@@ -8,9 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coder/websocket"
 	"github.com/brporter/phosphor/internal/auth"
 	"github.com/brporter/phosphor/internal/protocol"
+	"github.com/coder/websocket"
+
+	dbstore "github.com/brporter/phosphor/internal/store"
 )
 
 // newWSTestServer creates a full relay Server backed by an httptest.Server.
@@ -25,7 +27,7 @@ func newWSTestServer(t *testing.T) (*Server, *httptest.Server) {
 	})
 	verifier := auth.NewVerifier(slog.Default())
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
-	srv := NewServer(hub, slog.Default(), "http://test", verifier, true, authSessions, nil, NewBlocklist(""), 60*time.Second)
+	srv := NewServer(hub, slog.Default(), "http://test", verifier, true, authSessions, nil, dbstore.NewFake(), 60*time.Second)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	t.Cleanup(authSessions.Stop)

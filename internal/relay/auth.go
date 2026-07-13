@@ -25,7 +25,11 @@ func (s *Server) verifyToken(ctx context.Context, token string) (string, string,
 		if err != nil {
 			return "", "", "", fmt.Errorf("invalid api key: %w", err)
 		}
-		if s.blocklist != nil && s.blocklist.IsRevoked(claims.KeyID) {
+		revoked, err := s.db.IsAPIKeyRevoked(ctx, claims.KeyID)
+		if err != nil {
+			return "", "", "", fmt.Errorf("checking key revocation: %w", err)
+		}
+		if revoked {
 			return "", "", "", fmt.Errorf("api key revoked")
 		}
 		provider, sub, err := ParseAPIKeySubject(claims.Subject)

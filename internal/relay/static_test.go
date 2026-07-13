@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	dbstore "github.com/brporter/phosphor/internal/store"
 )
 
 func TestSpaHandler_ServesFile(t *testing.T) {
@@ -76,7 +78,7 @@ func TestSpaHandler_Root(t *testing.T) {
 
 func TestStaticHandler_NoDistDir(t *testing.T) {
 	store := NewMemorySessionStore()
-	s := &Server{hub: NewHub(store, nil, "test", slog.Default()), logger: slog.Default(), blocklist: NewBlocklist("")}
+	s := &Server{hub: NewHub(store, nil, "test", slog.Default()), logger: slog.Default(), db: dbstore.NewFake()}
 
 	handler := s.StaticHandler()
 

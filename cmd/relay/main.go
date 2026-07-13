@@ -16,6 +16,7 @@ import (
 
 	"github.com/brporter/phosphor/internal/auth"
 	"github.com/brporter/phosphor/internal/relay"
+	dbstore "github.com/brporter/phosphor/internal/store"
 )
 
 func main() {
@@ -44,6 +45,20 @@ func main() {
 		}
 		gracePeriod = parsed
 	}
+
+	// Durable state (tenants, users, machines, API keys) lives in Postgres.
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		logger.Error("DATABASE_URL is required")
+		os.Exit(1)
+	}
+	db, err := dbstore.New(context.Background(), databaseURL)
+	if err != nil {
+		logger.Error("database setup failed", "err", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+	logger.Info("connected to Postgres, migrations applied")
 
 	// Set up OIDC verifier (providers configured via env vars)
 	verifier := auth.NewVerifier(logger)
@@ -165,15 +180,7 @@ func main() {
 		logger.Warn("API_KEY_SECRET not set — generated random secret; API keys will not survive restarts")
 	}
 
-	// API key revocation blocklist
-	revocationFile := os.Getenv("API_KEY_REVOCATION_FILE")
-	if revocationFile == "" {
-		revocationFile = "/etc/phosphor/revoked-keys.txt"
-	}
-	blocklist := relay.NewBlocklist(revocationFile)
-	defer blocklist.Stop()
-
-	srv := relay.NewServer(hub, logger, baseURL, verifier, devMode, authSessions, apiKeySecret, blocklist, gracePeriod)
+	srv := relay.NewServer(hub, logger, baseURL, verifier, devMode, authSessions, apiKeySecret, db, gracePeriod)
 
 	httpServer := &http.Server{
 		Addr:         addr,

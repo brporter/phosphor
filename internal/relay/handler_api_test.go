@@ -7,7 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
 	"time"
+
+	dbstore "github.com/brporter/phosphor/internal/store"
 )
 
 func TestHandleListSessions_Empty(t *testing.T) {
@@ -15,7 +18,7 @@ func TestHandleListSessions_Empty(t *testing.T) {
 	hub := NewHub(store, nil, "test", slog.Default())
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
-	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions, blocklist: NewBlocklist("")}
+	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions, db: dbstore.NewFake()}
 
 	r := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	w := httptest.NewRecorder()
@@ -41,7 +44,7 @@ func TestHandleListSessions_WithSessions(t *testing.T) {
 	hub := NewHub(store, nil, "test", slog.Default())
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
-	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions, blocklist: NewBlocklist("")}
+	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions, db: dbstore.NewFake()}
 
 	ctx := context.Background()
 
@@ -131,7 +134,7 @@ func TestHandleListSessions_WithSessions(t *testing.T) {
 func TestHandleListSessions_Unauthorized(t *testing.T) {
 	store := NewMemorySessionStore()
 	hub := NewHub(store, nil, "test", slog.Default())
-	s := &Server{hub: hub, logger: slog.Default(), devMode: false, blocklist: NewBlocklist("")}
+	s := &Server{hub: hub, logger: slog.Default(), devMode: false, db: dbstore.NewFake()}
 
 	r := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	w := httptest.NewRecorder()
@@ -149,22 +152,22 @@ func TestHandleListSessions_LazySessionFields(t *testing.T) {
 	hub := NewHub(store, nil, "test", slog.Default())
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
-	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions, blocklist: NewBlocklist("")}
+	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions, db: dbstore.NewFake()}
 
 	ctx := context.Background()
 
 	// Register a lazy session with DelegateFor (simulating daemon creating a session)
 	info := SessionInfo{
-		ID:            "lazy1",
-		OwnerProvider: "delegated",
-		OwnerSub:      "user@example.com",
-		Mode:          "pty",
-		Cols:          80,
-		Rows:          24,
-		Command:       "bash",
-		Lazy:          true,
+		ID:             "lazy1",
+		OwnerProvider:  "delegated",
+		OwnerSub:       "user@example.com",
+		Mode:           "pty",
+		Cols:           80,
+		Rows:           24,
+		Command:        "bash",
+		Lazy:           true,
 		ProcessRunning: false,
-		DelegateFor:   "user@example.com",
+		DelegateFor:    "user@example.com",
 	}
 	hub.Register(ctx, info, nil)
 
@@ -205,7 +208,7 @@ func TestHandleListSessions_DelegatedVisibility(t *testing.T) {
 	hub := NewHub(store, nil, "test", slog.Default())
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
-	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions, blocklist: NewBlocklist("")}
+	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions, db: dbstore.NewFake()}
 
 	ctx := context.Background()
 
@@ -273,7 +276,7 @@ func TestHandleDestroySession_DelegatedOwnership(t *testing.T) {
 	hub := NewHub(store, nil, "test", slog.Default())
 	authSessions := NewMemoryAuthSessionStore(5 * time.Minute)
 	t.Cleanup(authSessions.Stop)
-	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions, blocklist: NewBlocklist("")}
+	s := &Server{hub: hub, logger: slog.Default(), devMode: true, authSessions: authSessions, db: dbstore.NewFake()}
 
 	ctx := context.Background()
 

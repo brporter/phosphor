@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/coder/websocket"
 	"github.com/brporter/phosphor/internal/protocol"
+	"github.com/coder/websocket"
 )
 
 const maxViewersPerSession = 10

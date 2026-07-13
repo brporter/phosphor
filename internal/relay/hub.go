@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coder/websocket"
 	"github.com/brporter/phosphor/internal/protocol"
+	"github.com/coder/websocket"
 )
 
 // Hub coordinates between SessionStore, MessageBus, and local sessions.

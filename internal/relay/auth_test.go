@@ -4,15 +4,14 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/brporter/phosphor/internal/auth"
+	"github.com/brporter/phosphor/internal/store"
 )
 
 func TestVerifyToken_DevMode_EmptyToken(t *testing.T) {
-	s := &Server{devMode: true, logger: slog.Default(), blocklist: NewBlocklist("")}
+	s := &Server{devMode: true, logger: slog.Default(), db: store.NewFake()}
 
 	provider, sub, _, err := s.verifyToken(t.Context(), "")
 	if err != nil {
@@ -27,7 +26,7 @@ func TestVerifyToken_DevMode_EmptyToken(t *testing.T) {
 }
 
 func TestVerifyToken_DevMode_ColonFormat(t *testing.T) {
-	s := &Server{devMode: true, logger: slog.Default(), blocklist: NewBlocklist("")}
+	s := &Server{devMode: true, logger: slog.Default(), db: store.NewFake()}
 
 	provider, sub, _, err := s.verifyToken(t.Context(), "prov:sub")
 	if err != nil {
@@ -45,7 +44,7 @@ func TestVerifyToken_DevMode_SinglePart(t *testing.T) {
 	// "noseparator" has no colon, so the colon-format branch is skipped.
 	// verifier is nil, so the OIDC branch is skipped.
 	// devMode is true, so the final devMode fallback fires.
-	s := &Server{devMode: true, logger: slog.Default(), blocklist: NewBlocklist("")}
+	s := &Server{devMode: true, logger: slog.Default(), db: store.NewFake()}
 
 	provider, sub, _, err := s.verifyToken(t.Context(), "noseparator")
 	if err != nil {
@@ -60,7 +59,7 @@ func TestVerifyToken_DevMode_SinglePart(t *testing.T) {
 }
 
 func TestVerifyToken_NonDev_EmptyToken(t *testing.T) {
-	s := &Server{devMode: false, logger: slog.Default(), blocklist: NewBlocklist("")}
+	s := &Server{devMode: false, logger: slog.Default(), db: store.NewFake()}
 
 	_, _, _, err := s.verifyToken(t.Context(), "")
 	if err == nil {
@@ -73,10 +72,10 @@ func TestVerifyToken_NonDev_EmptyToken(t *testing.T) {
 
 func TestExtractIdentity_BearerToken(t *testing.T) {
 	s := &Server{
-		devMode:   true,
-		logger:    slog.Default(),
-		verifier:  auth.NewVerifier(slog.Default()),
-		blocklist: NewBlocklist(""),
+		devMode:  true,
+		logger:   slog.Default(),
+		verifier: auth.NewVerifier(slog.Default()),
+		db:       store.NewFake(),
 	}
 
 	r, err := http.NewRequest(http.MethodGet, "/api/sessions", nil)
@@ -99,16 +98,25 @@ func TestExtractIdentity_BearerToken(t *testing.T) {
 
 func TestVerifyToken_APIKey_Valid(t *testing.T) {
 	secret := []byte("test-secret-32-bytes-long-enough")
-	rawJWT, _, err := GenerateAPIKey(secret, "microsoft", "user123")
+	rawJWT, keyID, err := GenerateAPIKey(secret, "microsoft", "user123")
 	if err != nil {
 		t.Fatalf("GenerateAPIKey: %v", err)
+	}
+
+	db := store.NewFake()
+	user, err := db.GetOrCreateUser(t.Context(), "microsoft", "user123", "")
+	if err != nil {
+		t.Fatalf("GetOrCreateUser: %v", err)
+	}
+	if err := db.RecordAPIKey(t.Context(), keyID, user.ID); err != nil {
+		t.Fatalf("RecordAPIKey: %v", err)
 	}
 
 	s := &Server{
 		devMode:      false,
 		logger:       slog.Default(),
 		apiKeySecret: secret,
-		blocklist:    NewBlocklist(""),
+		db:           db,
 	}
 
 	provider, sub, _, err := s.verifyToken(t.Context(), "phk:"+rawJWT)
@@ -130,21 +138,23 @@ func TestVerifyToken_APIKey_Revoked(t *testing.T) {
 		t.Fatalf("GenerateAPIKey: %v", err)
 	}
 
-	// Write a revocation file containing the key ID.
-	tmpDir := t.TempDir()
-	revFile := filepath.Join(tmpDir, "revoked.txt")
-	if err := os.WriteFile(revFile, []byte(keyID+"\n"), 0644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
+	db := store.NewFake()
+	user, err := db.GetOrCreateUser(t.Context(), "microsoft", "user123", "")
+	if err != nil {
+		t.Fatalf("GetOrCreateUser: %v", err)
 	}
-
-	bl := NewBlocklist(revFile)
-	defer bl.Stop()
+	if err := db.RecordAPIKey(t.Context(), keyID, user.ID); err != nil {
+		t.Fatalf("RecordAPIKey: %v", err)
+	}
+	if err := db.RevokeAPIKey(t.Context(), keyID, user.ID); err != nil {
+		t.Fatalf("RevokeAPIKey: %v", err)
+	}
 
 	s := &Server{
 		devMode:      false,
 		logger:       slog.Default(),
 		apiKeySecret: secret,
-		blocklist:    bl,
+		db:           db,
 	}
 
 	_, _, _, err = s.verifyToken(t.Context(), "phk:"+rawJWT)
@@ -156,11 +166,33 @@ func TestVerifyToken_APIKey_Revoked(t *testing.T) {
 	}
 }
 
+func TestVerifyToken_APIKey_Unknown(t *testing.T) {
+	// Keys minted before the database existed (or never recorded) are
+	// treated as revoked.
+	secret := []byte("test-secret-32-bytes-long-enough")
+	rawJWT, _, err := GenerateAPIKey(secret, "microsoft", "user123")
+	if err != nil {
+		t.Fatalf("GenerateAPIKey: %v", err)
+	}
+
+	s := &Server{
+		devMode:      false,
+		logger:       slog.Default(),
+		apiKeySecret: secret,
+		db:           store.NewFake(),
+	}
+
+	_, _, _, err = s.verifyToken(t.Context(), "phk:"+rawJWT)
+	if err == nil {
+		t.Fatal("expected error for unknown key, got nil")
+	}
+}
+
 func TestVerifyToken_APIKey_DevMode(t *testing.T) {
 	s := &Server{
-		devMode:   true,
-		logger:    slog.Default(),
-		blocklist: NewBlocklist(""),
+		devMode: true,
+		logger:  slog.Default(),
+		db:      store.NewFake(),
 	}
 
 	provider, sub, _, err := s.verifyToken(t.Context(), "phk:anything")
@@ -188,7 +220,7 @@ func TestVerifyToken_APIKey_WrongSecret(t *testing.T) {
 		devMode:      false,
 		logger:       slog.Default(),
 		apiKeySecret: secret2,
-		blocklist:    NewBlocklist(""),
+		db:           store.NewFake(),
 	}
 
 	_, _, _, err = s.verifyToken(t.Context(), "phk:"+rawJWT)

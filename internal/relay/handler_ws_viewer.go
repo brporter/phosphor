@@ -3,9 +3,9 @@ package relay
 import (
 	"net/http"
 
+	"github.com/brporter/phosphor/internal/protocol"
 	"github.com/coder/websocket"
 	gonanoid "github.com/matoous/go-nanoid/v2"
-	"github.com/brporter/phosphor/internal/protocol"
 )
 
 // HandleViewerWebSocket handles WebSocket connections from browser viewers.

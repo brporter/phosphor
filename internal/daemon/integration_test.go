@@ -16,6 +16,7 @@ import (
 	"github.com/brporter/phosphor/internal/auth"
 	"github.com/brporter/phosphor/internal/protocol"
 	"github.com/brporter/phosphor/internal/relay"
+	dbstore "github.com/brporter/phosphor/internal/store"
 )
 
 // mockPTY implements PTYProcess for testing.
@@ -114,7 +115,7 @@ func TestIntegration_DaemonRelayViewer(t *testing.T) {
 	})
 	verifier := auth.NewVerifier(slog.Default())
 	authSessions := relay.NewMemoryAuthSessionStore(5 * time.Minute)
-	srv := relay.NewServer(hub, slog.Default(), "http://test", verifier, true, authSessions, nil, relay.NewBlocklist(""), 60*time.Second)
+	srv := relay.NewServer(hub, slog.Default(), "http://test", verifier, true, authSessions, nil, dbstore.NewFake(), 60*time.Second)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 	defer authSessions.Stop()

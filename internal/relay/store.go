@@ -10,18 +10,18 @@ import (
 // SessionInfo holds serializable metadata for a terminal sharing session.
 // Stored in SessionStore (Redis hash or in-memory map).
 type SessionInfo struct {
-	ID             string
-	OwnerProvider  string
-	OwnerSub       string
-	Mode           string // "pty" or "pipe"
-	Command        string
-	Hostname       string
-	ReconnectToken string
-	RelayID        string
-	Cols           int
-	Rows           int
-	Disconnected   bool
-	DisconnectedAt time.Time
+	ID              string
+	OwnerProvider   string
+	OwnerSub        string
+	Mode            string // "pty" or "pipe"
+	Command         string
+	Hostname        string
+	ReconnectToken  string
+	RelayID         string
+	Cols            int
+	Rows            int
+	Disconnected    bool
+	DisconnectedAt  time.Time
 	ProcessExited   bool
 	Lazy            bool
 	ProcessRunning  bool
