@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { listKeys, saveKey, deleteKey, type StoredKey } from "../lib/keys";
 import { loadSSH } from "../lib/wasm";
+import { ImportKeyModal } from "./ImportKeyModal";
 
 export function KeysPage() {
   const [keys, setKeys] = useState<StoredKey[]>([]);
   const [name, setName] = useState("");
   const [passphrase, setPassphrase] = useState("");
-  const [importPem, setImportPem] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [showImport, setShowImport] = useState(false);
 
   const refresh = useCallback(() => {
     void listKeys().then(setKeys);
@@ -44,50 +45,10 @@ export function KeysPage() {
     }
   };
 
-  const handleImport = async () => {
-    if (!name || !importPem) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const ssh = await loadSSH();
-      const info = ssh.publicKeyFromPem(importPem, passphrase || undefined);
-      const key: StoredKey = {
-        id: crypto.randomUUID(),
-        name,
-        privateKeyPem: importPem,
-        authorizedKey: info.authorizedKey,
-        fingerprint: info.fingerprint,
-        createdAt: Date.now(),
-        encrypted: passphrase !== "",
-      };
-      await saveKey(key);
-      setName("");
-      setPassphrase("");
-      setImportPem("");
-      refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "import failed (wrong passphrase?)");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const copyAuthorizedKey = async (key: StoredKey) => {
     await navigator.clipboard.writeText(key.authorizedKey);
     setCopied(key.id);
     setTimeout(() => setCopied(null), 2000);
-  };
-
-  const inputStyle: React.CSSProperties = {
-    background: "#0a0a0a",
-    border: "1px solid var(--border-crt)",
-    color: "var(--green)",
-    padding: "6px 10px",
-    fontFamily: "inherit",
-    fontSize: 13,
-    outline: "none",
-    width: "100%",
-    boxSizing: "border-box",
   };
 
   return (
@@ -104,37 +65,38 @@ export function KeysPage() {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10, border: "1px solid var(--border-crt)", padding: 16 }}>
         <div style={{ color: "var(--cyan, #00e5ff)", fontSize: 13, fontWeight: "bold" }}>// NEW KEY</div>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Key name (e.g. laptop)" style={inputStyle} />
         <input
+          className="input-crt"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Key name (e.g. laptop)"
+        />
+        <input
+          className="input-crt"
           type="password"
           value={passphrase}
           onChange={(e) => setPassphrase(e.target.value)}
           placeholder="Passphrase (optional, encrypts the private key)"
-          style={inputStyle}
         />
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn-action" disabled={busy || !name} onClick={handleGenerate}>
             [generate ed25519]
           </button>
+          <button className="btn-action" disabled={busy} onClick={() => setShowImport(true)}>
+            [import existing key]
+          </button>
         </div>
-        <details>
-          <summary style={{ fontSize: 12, color: "var(--text-dim)", cursor: "pointer" }}>
-            or import an existing private key
-          </summary>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
-            <textarea
-              value={importPem}
-              onChange={(e) => setImportPem(e.target.value)}
-              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-              rows={5}
-              style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}
-            />
-            <button className="btn-action" disabled={busy || !name || !importPem} onClick={handleImport}>
-              [import]
-            </button>
-          </div>
-        </details>
       </div>
+
+      {showImport && (
+        <ImportKeyModal
+          onClose={() => setShowImport(false)}
+          onImported={() => {
+            setShowImport(false);
+            refresh();
+          }}
+        />
+      )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {keys.length === 0 && (

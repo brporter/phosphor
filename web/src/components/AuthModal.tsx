@@ -1,37 +1,6 @@
 import { useState } from "react";
 import type { AuthRequest } from "../hooks/useSSH";
 
-const overlay: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(0, 0, 0, 0.85)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 1000,
-};
-
-const panel: React.CSSProperties = {
-  background: "var(--bg-card-crt)",
-  border: "1px solid var(--border-crt)",
-  padding: 24,
-  maxWidth: 460,
-  display: "flex",
-  flexDirection: "column",
-  gap: 16,
-};
-
-const input: React.CSSProperties = {
-  flex: 1,
-  background: "#0a0a0a",
-  border: "1px solid var(--border-crt)",
-  color: "var(--green)",
-  padding: "6px 10px",
-  fontFamily: "inherit",
-  fontSize: 13,
-  outline: "none",
-};
-
 export function AuthModal({ request }: { request: AuthRequest }) {
   switch (request.kind) {
     case "password":
@@ -64,9 +33,9 @@ function PromptModal({
 }) {
   const [value, setValue] = useState("");
   return (
-    <div style={overlay}>
+    <div className="modal-overlay">
       <form
-        style={panel}
+        className="modal-panel"
         onSubmit={(e) => {
           e.preventDefault();
           onSubmit(value);
@@ -79,7 +48,7 @@ function PromptModal({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           autoFocus
-          style={input}
+          className="input-crt"
         />
         <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
           <button type="button" className="btn-action" onClick={onCancel}>
@@ -101,9 +70,9 @@ function KeyboardInteractiveModal({
 }) {
   const [answers, setAnswers] = useState<string[]>(request.questions.map(() => ""));
   return (
-    <div style={overlay}>
+    <div className="modal-overlay">
       <form
-        style={panel}
+        className="modal-panel"
         onSubmit={(e) => {
           e.preventDefault();
           request.respond(answers);
@@ -127,7 +96,7 @@ function KeyboardInteractiveModal({
                 next[i] = e.target.value;
                 setAnswers(next);
               }}
-              style={input}
+              className="input-crt"
             />
           </label>
         ))}
@@ -146,8 +115,8 @@ function KeyboardInteractiveModal({
 
 function HostKeyModal({ request }: { request: Extract<AuthRequest, { kind: "hostkey" }> }) {
   return (
-    <div style={overlay}>
-      <div style={panel}>
+    <div className="modal-overlay">
+      <div className="modal-panel">
         <div
           style={{
             color: request.known ? "var(--red)" : "var(--amber)",

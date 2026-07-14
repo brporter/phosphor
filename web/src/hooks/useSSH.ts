@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loadSSH, type SSHHandle } from "../lib/wasm";
 import { getHostKeyPin, setHostKeyPin } from "../lib/keys";
-import type { StoredKey } from "../lib/keys";
 
 // AuthRequest drives a modal in the UI; respond() resolves the pending WASM
 // callback.
@@ -23,12 +22,19 @@ export type AuthRequest =
     }
   | { kind: "key-passphrase"; respond: (value: string | null) => void };
 
+// A private key used for this session only. Stored keys and on-demand
+// pasted/loaded keys both reduce to this shape; nothing here is persisted.
+export interface SessionKey {
+  privateKeyPem: string;
+  passphrase?: string;
+}
+
 export interface UseSSHOptions {
   machineId: string;
   token: string | null;
   username: string;
   // A selected key for public-key auth (optional; password auth if omitted).
-  key?: StoredKey | null;
+  key?: SessionKey | null;
   connect: boolean;
   onData: (data: Uint8Array) => void;
   onClose?: () => void;
@@ -82,6 +88,7 @@ export function useSSH(opts: UseSSHOptions): UseSSHResult {
           token,
           username,
           privateKey: key?.privateKeyPem,
+          keyPassphrase: key?.passphrase,
           rows: 24,
           cols: 80,
           callbacks: {

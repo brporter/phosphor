@@ -83,29 +83,11 @@ export function MachineCard({ machine, token, onChanged }: MachineCardProps) {
       </div>
 
       {showDelete && (
-        <div
-          onClick={() => setShowDelete(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.85)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-        >
+        <div className="modal-overlay" onClick={() => setShowDelete(false)}>
           <div
+            className="modal-panel"
             onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "var(--bg-card-crt)",
-              border: "1px solid var(--border-crt)",
-              padding: 24,
-              maxWidth: 420,
-              display: "flex",
-              flexDirection: "column",
-              gap: 16,
-            }}
+            style={{ maxWidth: 420 }}
           >
             <div style={{ color: "var(--red)", fontWeight: "bold", fontSize: 14 }}>
               // REMOVE MACHINE

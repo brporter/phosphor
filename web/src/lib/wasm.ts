@@ -47,10 +47,36 @@ export interface PublicKeyInfo {
   fingerprint: string;
 }
 
-interface PhosphorSSH {
+// Synchronous WASM calls return an {ok, ...} envelope instead of throwing —
+// a js.FuncOf callback in Go cannot raise a JS exception. unwrap() converts
+// the failure arm back into a thrown Error so callers can use try/catch.
+export type WasmResult<T> = ({ ok: true } & T) | { ok: false; error: string };
+
+export interface RawPhosphorSSH {
+  connect(opts: ConnectOptions): Promise<SSHHandle>;
+  generateKeypair(passphrase?: string): WasmResult<GeneratedKeypair>;
+  publicKeyFromPem(pem: string, passphrase?: string): WasmResult<PublicKeyInfo>;
+}
+
+export interface PhosphorSSH {
   connect(opts: ConnectOptions): Promise<SSHHandle>;
   generateKeypair(passphrase?: string): GeneratedKeypair;
   publicKeyFromPem(pem: string, passphrase?: string): PublicKeyInfo;
+}
+
+function unwrap<T>(result: WasmResult<T>): T {
+  if (!result.ok) throw new Error(result.error);
+  return result;
+}
+
+// wrapPhosphorSSH converts the raw envelope-returning global into the
+// exception-throwing API the app consumes. Exported for tests.
+export function wrapPhosphorSSH(raw: RawPhosphorSSH): PhosphorSSH {
+  return {
+    connect: (opts) => raw.connect(opts),
+    generateKeypair: (passphrase) => unwrap(raw.generateKeypair(passphrase)),
+    publicKeyFromPem: (pem, passphrase) => unwrap(raw.publicKeyFromPem(pem, passphrase)),
+  };
 }
 
 declare global {
@@ -59,7 +85,7 @@ declare global {
       run(instance: WebAssembly.Instance): void;
       importObject: WebAssembly.Imports;
     };
-    phosphorSSH?: PhosphorSSH;
+    phosphorSSH?: RawPhosphorSSH;
   }
 }
 
@@ -96,7 +122,8 @@ export function loadSSH(): Promise<PhosphorSSH> {
 
     // Wait for the module to install its global.
     for (let i = 0; i < 100; i++) {
-      if (window.phosphorSSH) return window.phosphorSSH;
+      const raw = window.phosphorSSH;
+      if (raw) return wrapPhosphorSSH(raw);
       await new Promise((r) => setTimeout(r, 10));
     }
     throw new Error("phosphorSSH global did not initialize");
