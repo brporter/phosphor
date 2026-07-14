@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, Link } from "react-router";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { useAuth } from "../auth/useAuth";
-import { useSSH } from "../hooks/useSSH";
+import { useSSH, type SessionKey } from "../hooks/useSSH";
 import { listKeys, type StoredKey } from "../lib/keys";
+import { loadSSH } from "../lib/wasm";
 import { AuthModal } from "./AuthModal";
+
+// Sentinel <select> value for a key pasted/loaded just for this session.
+const INLINE_KEY = "__inline__";
 
 export function ConnectView() {
   const { id } = useParams<{ id: string }>();
@@ -15,11 +19,16 @@ export function ConnectView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   // Connection form state (before the session starts).
   const [username, setUsername] = useState("");
   const [selectedKeyId, setSelectedKeyId] = useState<string>("");
   const [keys, setKeys] = useState<StoredKey[]>([]);
+  // On-demand key: lives only in component state, never persisted.
+  const [inlinePem, setInlinePem] = useState("");
+  const [inlinePassphrase, setInlinePassphrase] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
   const [started, setStarted] = useState(false);
 
   useEffect(() => {
@@ -37,13 +46,22 @@ export function ConnectView() {
     termRef.current?.write("\r\n\x1b[1;31m[Session closed]\x1b[0m\r\n");
   }, []);
 
-  const selectedKey = keys.find((k) => k.id === selectedKeyId) ?? null;
+  // Memoized so its identity is stable across renders — useSSH tears down the
+  // session when the key reference changes.
+  const sessionKey = useMemo<SessionKey | null>(() => {
+    if (selectedKeyId === INLINE_KEY) {
+      if (!inlinePem.trim()) return null;
+      return { privateKeyPem: inlinePem, passphrase: inlinePassphrase || undefined };
+    }
+    const stored = keys.find((k) => k.id === selectedKeyId);
+    return stored ? { privateKeyPem: stored.privateKeyPem } : null;
+  }, [selectedKeyId, keys, inlinePem, inlinePassphrase]);
 
   const { connected, connecting, error, authRequest, sendStdin, sendResize, disconnect } = useSSH({
     machineId: id ?? "",
     token: getToken(),
     username,
-    key: selectedKey,
+    key: sessionKey,
     connect: started,
     onData,
     onClose,
@@ -109,11 +127,35 @@ export function ConnectView() {
     };
   }, [connected, sendStdin, sendResize]);
 
+  const usingInlineKey = selectedKeyId === INLINE_KEY;
+  const canConnect = username !== "" && (!usingInlineKey || inlinePem.trim() !== "");
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username) return;
-    localStorage.setItem(`phosphor_user_${id}`, username);
-    setStarted(true);
+    if (!canConnect) return;
+    setFormError(null);
+    void (async () => {
+      if (usingInlineKey) {
+        // Validate the pasted key (and passphrase) before opening the session.
+        try {
+          const ssh = await loadSSH();
+          ssh.publicKeyFromPem(inlinePem, inlinePassphrase || undefined);
+        } catch (err) {
+          setFormError(err instanceof Error ? err.message : "invalid private key");
+          return;
+        }
+      }
+      localStorage.setItem(`phosphor_user_${id}`, username);
+      setStarted(true);
+    })();
+  };
+
+  const handleKeyFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setFormError(null);
+    setInlinePem(await file.text());
   };
 
   if (!started) {
@@ -141,33 +183,21 @@ export function ConnectView() {
           <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--text-dim)" }}>
             SSH username
             <input
+              className="input-crt"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="e.g. ubuntu"
               autoFocus
-              style={{
-                background: "#0a0a0a",
-                border: "1px solid var(--border-crt)",
-                color: "var(--green)",
-                padding: "6px 10px",
-                fontFamily: "inherit",
-                fontSize: 13,
-                outline: "none",
-              }}
             />
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--text-dim)" }}>
             Key (optional — password prompt if none)
             <select
+              className="input-crt"
               value={selectedKeyId}
-              onChange={(e) => setSelectedKeyId(e.target.value)}
-              style={{
-                background: "#0a0a0a",
-                border: "1px solid var(--border-crt)",
-                color: "var(--green)",
-                padding: "6px 10px",
-                fontFamily: "inherit",
-                fontSize: 13,
+              onChange={(e) => {
+                setSelectedKeyId(e.target.value);
+                setFormError(null);
               }}
             >
               <option value="">Password authentication</option>
@@ -176,13 +206,56 @@ export function ConnectView() {
                   {k.name} ({k.fingerprint.slice(0, 24)}…)
                 </option>
               ))}
+              <option value={INLINE_KEY}>Use a key just for this session…</option>
             </select>
           </label>
-          <button type="submit" className="btn-action" disabled={!username}>
+          {usingInlineKey && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--text-dim)" }}>
+                Private key (PEM) — used for this session only, never stored
+                <textarea
+                  className="input-crt"
+                  value={inlinePem}
+                  onChange={(e) => {
+                    setInlinePem(e.target.value);
+                    setFormError(null);
+                  }}
+                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                  rows={5}
+                  style={{ resize: "vertical" }}
+                />
+              </label>
+              <div>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  style={{ display: "none" }}
+                  onChange={(e) => void handleKeyFile(e)}
+                />
+                <button type="button" className="btn-action" onClick={() => fileRef.current?.click()}>
+                  [load from file]
+                </button>
+              </div>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--text-dim)" }}>
+                Key passphrase (only if the key is encrypted)
+                <input
+                  className="input-crt"
+                  type="password"
+                  value={inlinePassphrase}
+                  onChange={(e) => {
+                    setInlinePassphrase(e.target.value);
+                    setFormError(null);
+                  }}
+                />
+              </label>
+            </div>
+          )}
+          {formError && <div style={{ color: "var(--red)", fontSize: 12 }}>{formError}</div>}
+          <button type="submit" className="btn-action" disabled={!canConnect}>
             [connect]
           </button>
           <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-            Manage keys on the <Link to="/keys" style={{ color: "var(--green)" }}>keys page</Link>.
+            Manage stored keys on the <Link to="/keys" style={{ color: "var(--green)" }}>keys page</Link>.
           </div>
         </form>
       </div>

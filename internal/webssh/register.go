@@ -3,13 +3,9 @@
 package webssh
 
 import (
-	"crypto/ed25519"
-	"crypto/rand"
-	"encoding/pem"
-	"strings"
 	"syscall/js"
 
-	"golang.org/x/crypto/ssh"
+	"github.com/brporter/phosphor/internal/sshkeys"
 )
 
 // Register installs the phosphorSSH global.
@@ -74,33 +70,37 @@ func jsConnect(this js.Value, args []js.Value) any {
 	return js.Global().Get("Promise").New(handler)
 }
 
+// Synchronous API results use an {ok, ...} envelope rather than throwing:
+// js.FuncOf callbacks cannot raise a JS exception (a Go panic kills the whole
+// module), so the wasm.ts wrapper checks `ok` and rethrows on the JS side.
+func errResult(msg string) js.Value {
+	out := js.Global().Get("Object").New()
+	out.Set("ok", false)
+	out.Set("error", msg)
+	return out
+}
+
+func okResult() js.Value {
+	out := js.Global().Get("Object").New()
+	out.Set("ok", true)
+	return out
+}
+
 // jsGenerateKeypair creates an ed25519 keypair. Optional first arg is a
 // passphrase to encrypt the private key PEM.
 func jsGenerateKeypair(this js.Value, args []js.Value) any {
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	passphrase := ""
+	if len(args) > 0 && args[0].Type() == js.TypeString {
+		passphrase = args[0].String()
+	}
+	kp, err := sshkeys.GenerateKeypair(passphrase)
 	if err != nil {
-		return jsError(err.Error())
+		return errResult(err.Error())
 	}
-
-	var block *pem.Block
-	if len(args) > 0 && args[0].Type() == js.TypeString && args[0].String() != "" {
-		block, err = ssh.MarshalPrivateKeyWithPassphrase(priv, "phosphor browser key", []byte(args[0].String()))
-	} else {
-		block, err = ssh.MarshalPrivateKey(priv, "phosphor browser key")
-	}
-	if err != nil {
-		return jsError(err.Error())
-	}
-
-	sshPub, err := ssh.NewPublicKey(pub)
-	if err != nil {
-		return jsError(err.Error())
-	}
-
-	out := js.Global().Get("Object").New()
-	out.Set("privateKeyPem", string(pem.EncodeToMemory(block)))
-	out.Set("authorizedKey", strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPub))))
-	out.Set("fingerprint", ssh.FingerprintSHA256(sshPub))
+	out := okResult()
+	out.Set("privateKeyPem", kp.PrivateKeyPem)
+	out.Set("authorizedKey", kp.AuthorizedKey)
+	out.Set("fingerprint", kp.Fingerprint)
 	return out
 }
 
@@ -108,22 +108,19 @@ func jsGenerateKeypair(this js.Value, args []js.Value) any {
 // private key PEM (validating an optional passphrase).
 func jsPublicKeyFromPem(this js.Value, args []js.Value) any {
 	if len(args) == 0 || args[0].Type() != js.TypeString {
-		return jsError("privateKeyPem is required")
+		return errResult("privateKeyPem is required")
 	}
-	pemStr := args[0].String()
-	var signer ssh.Signer
-	var err error
-	if len(args) > 1 && args[1].Type() == js.TypeString && args[1].String() != "" {
-		signer, err = ssh.ParsePrivateKeyWithPassphrase([]byte(pemStr), []byte(args[1].String()))
-	} else {
-		signer, err = ssh.ParsePrivateKey([]byte(pemStr))
+	passphrase := ""
+	if len(args) > 1 && args[1].Type() == js.TypeString {
+		passphrase = args[1].String()
 	}
+	info, err := sshkeys.PublicKeyFromPem(args[0].String(), passphrase)
 	if err != nil {
-		return jsError(err.Error())
+		return errResult(err.Error())
 	}
-	out := js.Global().Get("Object").New()
-	out.Set("authorizedKey", strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))))
-	out.Set("fingerprint", ssh.FingerprintSHA256(signer.PublicKey()))
+	out := okResult()
+	out.Set("authorizedKey", info.AuthorizedKey)
+	out.Set("fingerprint", info.Fingerprint)
 	return out
 }
 
